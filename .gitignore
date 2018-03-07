@@ -22,3 +22,4 @@ f90/utest
 **/out
 **/fig
 a.out
+*.x
