@@ -8,20 +8,14 @@ contains
     m_ = 1
     r0_ = 0
   end subroutine Harm_new
-  subroutine Harm_HeIJ(Q, res, ierr)
+  subroutine Harm_H_X(Q, HeIJ, XkIJ, ierr)
     double precision, intent(in) :: Q(:)
-    complex(kind(0d0)), intent(out) :: res(:,:)
+    complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
     integer, intent(out) :: ierr
     ierr = 0
-    res(1,1) = k_/2*(Q(1)-r0_)**2
-  end subroutine Harm_HeIJ
-  subroutine Harm_XkIJ(Q, res, ierr)
-    double precision, intent(in) :: Q(:)
-    complex(kind(0d0)), intent(out) :: res(:,:,:)
-    integer, intent(out) :: ierr
-    ierr = 0
-    res = 0*Q(1)
-  end subroutine Harm_XkIJ
+    HeIJ(1,1) = k_/2*(Q(1)-r0_)**2
+    XkIJ(1,1,1) = 0.0d0
+  end subroutine Harm_H_X
   subroutine Harm_ctraj(R0, P0, t, R, P, ierr)
     double precision, intent(in) :: R0(:), P0(:)
     double precision, intent(in) :: t
@@ -43,12 +37,18 @@ module Mod_UTestDy
   implicit none
 contains
   subroutine UTestDy_run
+    write(*,*)
+    write(*,*) "UTestDy begin"
+    write(*,*)
     call UTestDy_mono_1f1e
+    write(*,*)
+    write(*,*) "UTestDy end"
+    write(*,*)    
   end subroutine UTestDy_run
   subroutine UTestDy_mono_1f1e
     use Mod_DyMono, only : gwp_, c_, dt_, &
          DyMono_new, DyMono_setup, DyMono_update, DyMono_delete
-    use Mod_Harm, only : Harm_new, Harm_HeIJ, Harm_XkIJ, Harm_ctraj, k_, m_, r0_
+    use Mod_Harm, only : Harm_new, Harm_H_X, Harm_ctraj, k_, m_, r0_
     integer, parameter :: nf = 1, nebasis=1, nt=100
     double precision, parameter :: eps = 1.0d-10
     integer ierr, it
@@ -71,7 +71,7 @@ contains
     ! -- Calculate --
     call Harm_ctraj(gwp_%R(1,:), gwp_%P(1,:), dt_*nt, R(:), P(:), ierr)
     do it = 1, nt
-       call DyMono_update(Harm_HeIJ, Harm_XkIJ, ierr)
+       call DyMono_update(Harm_H_X, ierr)
     end do
     call expect_near_d(gwp_%R(1,1), R(1), 1.0d-2, ierr)
     call expect_near_d(gwp_%P(1,1), P(1), 1.0d-2, ierr)

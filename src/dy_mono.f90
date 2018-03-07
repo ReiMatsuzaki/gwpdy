@@ -11,6 +11,7 @@ module Mod_DyMono
   type(Obj_GWP) :: gwp_
   complex(kind(0d0)), allocatable :: c_(:)
   integer :: nd_        ! order of numerical differate
+  character(8) :: inte_RP_    ! euler or RK4
   double precision :: dt_, dR_, dP_ ! finite difference for t R and P
   integer :: nt_, n1t_  ! number of time for print, number for each step
 contains
@@ -177,18 +178,13 @@ contains
     ifile = ifile + 1            
     
   end subroutine read_res
-  subroutine DyMono_run(HeIJ, XkIJ)
+  subroutine DyMono_run(calc_H_X)
     interface
-       subroutine HeIJ(Q,res, ierr)
+       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
          double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: res(:,:)
+         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
          integer, intent(out) :: ierr
-       end subroutine HEIJ
-       subroutine XkIJ(Q,res, ierr)
-         double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: res(:,:,:)
-         integer, intent(out) :: ierr
-       end subroutine XKIJ
+       end subroutine calc_H_X
     end interface
     integer it, i1t, ierr, it0
 
@@ -214,7 +210,7 @@ contains
        call write_res(it)
        call print_res(it)
        do i1t = 1, n1t_
-          call DyMono_update(HeIJ, XkIJ, ierr); check_err(ierr)
+          call DyMono_update(calc_H_X, ierr); check_err(ierr)
        end do
     end do
 
@@ -235,6 +231,7 @@ contains
     c_ = 0
 
     nd_ = 2
+    inte_RP_ = "euler"
     dt_ = 0.1d0
     nt_  = 10
     n1t_ = 1
@@ -256,71 +253,46 @@ contains
        return
     end if
     c_(:) = c_(:) / sqrt(norm2)
+
+    if(inte_RP_.ne."euler" .and. inte_RP_.ne."RK4") then
+       begin_err("unsupported inte_RP_")
+       ierr = 1
+       write(0,*) "inte_RP_:", inte_RP_
+       return
+    end if
   end subroutine DyMono_setup
-  subroutine DyMono_update(HeIJ, XkIJ, ierr)
+  subroutine DyMono_update(calc_H_X, ierr)
     use Mod_const, only : II
     use Mod_math, only : lapack_zheev
     interface
-       subroutine HeIJ(Q,res, ierr)
+       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
          double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: res(:,:)
+         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
          integer, intent(out) :: ierr
-       end subroutine HEIJ
-       subroutine XkIJ(Q,res, ierr)
-         double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: res(:,:,:)
-         integer, intent(out) :: ierr
-       end subroutine XKIJ
+       end subroutine calc_H_X
     end interface
     integer, intent(out) :: ierr
-    complex(kind(0d0)), allocatable :: dH_dR(:,:), dH_dP(:,:), H1(:,:), H2(:,:)
-    integer k
-    double precision, allocatable :: R(:), P(:), dotR(:), dotP(:)
-    double precision :: w(ne_)
-    complex(kind(0d0)) :: U(ne_, ne_), UH(ne_, ne_)
+    double precision :: dR(nf_), dP(nf_), w(ne_)
+    complex(kind(0d0)) :: U(ne_, ne_), UH(ne_, ne_), H1(ne_,ne_)
 
     ierr = 0
 
-    allocate(dH_dR(ne_,ne_), dH_dP(ne_,ne_))
-    allocate(H1(ne_,ne_),    H2(ne_,ne_))
-    allocate(R(nf_), P(nf_), dotR(nf_), dotP(nf_))
-
-    if(nd_.eq.2) then
-       do k = 1, nf_
-          gwp_%R(1,k) = gwp_%R(1,k) + dR_
-          call HIJ(HeIJ, XkIJ, H1(:,:), ierr)
-          gwp_%R(1,k) = gwp_%R(1,k) - 2*dR_
-          call HIJ(HeIJ, XkIJ, H2(:,:), ierr)
-          gwp_%R(1,k) = gwp_%R(1,k) + dR_
-          dH_dR(:,:) = (H1(:,:) - H2(:,:)) / (2*dR_)
-          dotP(k) = -real(dot_product(c_(:), matmul(dH_dR(:,:), c_(:))))
-
-          gwp_%P(1,k) = gwp_%P(1,k) + dP_
-          call HIJ(HeIJ, XkIJ, H1(:,:), ierr)
-          gwp_%P(1,k) = gwp_%P(1,k) -2*dP_
-          call HIJ(HeIJ, XkIJ, H2(:,:), ierr)
-          gwp_%P(1,k) = gwp_%P(1,k) + dP_
-          dH_dP(:,:) = (H1(:,:) - H2(:,:)) / (2*dP_)
-          dotR(k) = real(dot_product(c_(:), matmul(dH_dP(:,:), c_(:))))
-       end do
-    else
-       begin_err("invalid nd_")
-       ierr = 1
+    if(inte_RP_.eq."euler") then
+       call inte_RP_euler(calc_H_X, dR(:), dP(:), ierr)
+    else if(inte_RP_.eq."RK4") then
+       call inte_RP_RK4(calc_H_X, dR(:), dP(:), ierr)
     end if
 
-    call HIJ(HeIJ, XkIJ, H1(:,:), ierr); check_err(ierr)
+    call HIJ(calc_H_X, H1(:,:), ierr); check_err(ierr)
     call lapack_zheev(ne_, H1(:,:), w(:), U(:,:), ierr); check_err(ierr)
     UH(:,:) = conjg(transpose(U(:,:)))
     c_(:) = matmul(UH(:,:), c_(:))
     c_(:) = exp(-II*w(:)*dt_) * c_(:)
     c_(:) = matmul(U(:,:), c_(:))
 
-    gwp_%R(1,:) = gwp_%R(1,:) + dotR(:) * dt_
-    gwp_%P(1,:) = gwp_%P(1,:) + dotP(:) * dt_
+    gwp_%R(1,:) = gwp_%R(1,:) + dR(:)
+    gwp_%P(1,:) = gwp_%P(1,:) + dP(:)
 
-    deallocate(dH_dR, dH_dP, H1, H2)
-    deallocate(R, P, dotR, dotP)
-    
   end subroutine DyMono_update
   subroutine DyMono_delete(ierr)
     integer, intent(out) :: ierr
@@ -329,22 +301,105 @@ contains
     deallocate(c_)
   end subroutine DyMono_delete
   ! ==== Private ====
-  subroutine HIJ(HeIJ, XkIJ, res, ierr)
+  subroutine inte_RP_euler(calc_H_X, dR, dP, ierr)
+    interface
+       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
+         double precision, intent(in) :: Q(:)
+         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
+         integer, intent(out) :: ierr
+       end subroutine calc_H_X
+    end interface
+    double precision, intent(out) :: dR(:), dP(:)
+    double precision :: dotR(nf_), dotP(nf_)
+    integer, intent(out) :: ierr
+    call dot_RP(calc_H_X, dotR, dotP, ierr)
+    dR(:) = dotR(:)*dt_
+    dP(:) = dotP(:)*dt_
+  end subroutine inte_RP_euler
+  subroutine inte_RP_RK4(calc_H_X, dR, dP, ierr)
+    interface
+       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
+         double precision, intent(in) :: Q(:)
+         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
+         integer, intent(out) :: ierr
+       end subroutine calc_H_X
+    end interface
+    double precision, intent(out) :: dR(:), dP(:)
+    integer, intent(out) :: ierr
+    double precision :: kR(4,nf_), kP(4,nf_)
+    
+    call dot_RP(calc_H_X, kR(1,:), kP(1,:), ierr)
+    
+    gwp_%R(1,:) = gwp_%R(1,:) + kR(1,:) * dt_/2
+    gwp_%P(1,:) = gwp_%P(1,:) + kP(1,:) * dt_/2
+    call dot_RP(calc_H_X, kR(2,:), kP(2,:), ierr)
+    gwp_%R(1,:) = gwp_%R(1,:) - kR(1,:) * dt_/2
+    gwp_%P(1,:) = gwp_%P(1,:) - kP(1,:) * dt_/2
+
+    gwp_%R(1,:) = gwp_%R(1,:) + kR(2,:) * dt_/2
+    gwp_%P(1,:) = gwp_%P(1,:) + kP(2,:) * dt_/2
+    call dot_RP(calc_H_X, kR(3,:), kP(3,:), ierr)
+    gwp_%R(1,:) = gwp_%R(1,:) - kR(2,:) * dt_/2
+    gwp_%P(1,:) = gwp_%P(1,:) - kP(2,:) * dt_/2
+
+    gwp_%R(1,:) = gwp_%R(1,:) + kR(3,:) * dt_/2
+    gwp_%P(1,:) = gwp_%P(1,:) + kP(3,:) * dt_/2
+    call dot_RP(calc_H_X, kR(3,:), kP(4,:), ierr)
+    gwp_%R(1,:) = gwp_%R(1,:) - kR(3,:) * dt_/2
+    gwp_%P(1,:) = gwp_%P(1,:) - kP(3,:) * dt_/2    
+
+    dR(:) =  (kR(1,:) + 2*kR(2,:) + 2*kR(3,:) + kR(4,:)) * dt_/6
+    dP(:) =  (kP(1,:) + 2*kP(2,:) + 2*kP(3,:) + kP(4,:)) * dt_/6
+    
+    
+  end subroutine inte_RP_RK4
+  subroutine dot_RP(calc_H_X, dotR, dotP, ierr)
+    interface
+       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
+         double precision, intent(in) :: Q(:)
+         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
+         integer, intent(out) :: ierr
+       end subroutine calc_H_X
+    end interface
+    double precision, intent(out) :: dotR(:), dotP(:)
+    integer, intent(out) :: ierr
+    integer k
+    complex(kind(0d0)) :: H1(ne_,ne_), H2(ne_,ne_)
+    complex(kind(0d0)) :: dH_dR(ne_,ne_), dH_dP(ne_,ne_)
+    if(nd_.eq.2) then
+       do k = 1, nf_
+          gwp_%R(1,k) = gwp_%R(1,k) + dR_
+          call HIJ(calc_H_X, H1(:,:), ierr)
+          gwp_%R(1,k) = gwp_%R(1,k) - 2*dR_
+          call HIJ(calc_H_X, H2(:,:), ierr)
+          gwp_%R(1,k) = gwp_%R(1,k) + dR_
+          dH_dR(:,:) = (H1(:,:) - H2(:,:)) / (2*dR_)
+          dotP(k) = -real(dot_product(c_(:), matmul(dH_dR(:,:), c_(:))))
+
+          gwp_%P(1,k) = gwp_%P(1,k) + dP_
+          call HIJ(calc_H_X, H1(:,:), ierr)
+          gwp_%P(1,k) = gwp_%P(1,k) -2*dP_
+          call HIJ(calc_H_X, H2(:,:), ierr)
+          gwp_%P(1,k) = gwp_%P(1,k) + dP_
+          dH_dP(:,:) = (H1(:,:) - H2(:,:)) / (2*dP_)
+          dotR(k) = real(dot_product(c_(:), matmul(dH_dP(:,:), c_(:))))
+       end do
+    else
+       begin_err("invalid nd_")
+       ierr = 1
+    end if        
+  end subroutine dot_RP
+  subroutine HIJ(calc_H_X, res, ierr)
     use Mod_const, only : II
     interface
-       subroutine HeIJ(Q,res, ierr)
+       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
          double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: res(:,:)
+         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
          integer, intent(out) :: ierr
-       end subroutine HEIJ
-       subroutine XkIJ(Q,res, ierr)
-         double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: res(:,:,:)
-         integer, intent(out) :: ierr
-       end subroutine XKIJ
+       end subroutine calc_H_X
     end interface
     complex(kind(0d0)), intent(out) :: res(:,:)
-!    complex(kind(0d0)) :: HeIJ0(ne_, ne_), XkIJ0(nf_, ne_, ne_)
+    !    complex(kind(0d0)) :: HeIJ0(ne_, ne_), XkIJ0(nf_, ne_, ne_)
     !   integer k, I
     integer I
     integer ierr
@@ -352,7 +407,7 @@ contains
     do I = 1, ne_
        res(:,I) = 0
        res(:,I) = 1
-       call Hc(HeIJ, XkIJ, res(:,I), ierr)
+       call Hc(calc_H_X, res(:,I), ierr)
     end do
     
 !    call HeIJ(gwp_%R(1,:), HeIJ0(:,:),   ierr)
@@ -366,36 +421,30 @@ contains
 !    end do
     
   end subroutine HIJ
-  subroutine Hc(HeIJ, XkIJ, c, ierr)
+  subroutine Hc(calc_H_X, c, ierr)
     use Mod_const, only : II
     interface
-       subroutine HeIJ(Q,res, ierr)
+       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
          double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: res(:,:)
+         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
          integer, intent(out) :: ierr
-       end subroutine HEIJ
-       subroutine XkIJ(Q,res, ierr)
-         double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: res(:,:,:)
-         integer, intent(out) :: ierr
-       end subroutine XKIJ
+       end subroutine calc_H_X
     end interface
     complex(kind(0d0)), intent(inout) :: c(:)
-    complex(kind(0d0)) :: HeIJ0(ne_, ne_), XkIJ0(nf_, ne_, ne_)
+    complex(kind(0d0)) :: HeIJ(ne_, ne_), XkIJ(nf_, ne_, ne_)
     integer k
     integer ierr
     complex(kind(0d0)) :: c0(ne_), Xc0(ne_)
     ierr = 0
-    call HeIJ(gwp_%R(1,:), HeIJ0(:,:),   ierr)
-    call XkIJ(gwp_%R(1,:), XkIJ0(:,:,:), ierr)
+    call calc_H_X(gwp_%R(1,:), HeIJ(:,:), XkIJ(:,:,:), ierr)
     c0(:) = c(:)
 
-    c(:) = matmul(HeIJ0(:,:), c0(:))
+    c(:) = matmul(HeIJ(:,:), c0(:))
     do k = 1, nf_
-       Xc0(:) = matmul(XkIJ0(k,:,:), c0(:))
+       Xc0(:) = matmul(XkIJ(k,:,:), c0(:))
        c(:) = c(:) + gwp_%P(1,k)**2 * 0.5d0 * c0(:)
        c(:) = c(:) - II * gwp_%P(1,k) * Xc0(:)
-       c(:) = c(:) - 0.5d0 * matmul(XkIJ0(k,:,:), Xc0(:))
+       c(:) = c(:) - 0.5d0 * matmul(XkIJ(k,:,:), Xc0(:))
     end do
         
   end subroutine Hc
