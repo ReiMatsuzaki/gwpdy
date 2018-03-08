@@ -6,15 +6,18 @@ module Mod_DyMono
   ! G is auss wave packet
   use Mod_GWP
   implicit none
-  integer :: nf_   ! number of freedom
-  integer :: ne_   ! number of electron Hilbert space
+  integer :: nf_         ! number of freedom
+  integer :: ne_         ! number of electron Hilbert space
   double precision :: m_ ! mass
-  type(Obj_GWP) :: gwp_
-  complex(kind(0d0)), allocatable :: c_(:)
-  integer :: nd_        ! order of numerical differate
-  character(8) :: inte_RP_    ! euler or RK4
-  double precision :: dt_, dR_, dP_ ! finite difference for t R and P
-  integer :: nt_, n1t_  ! number of time for print, number for each step
+  double precision :: g_ ! exponent of GWP
+  double precision, allocatable :: R_(:), P_(:) ! phase space location of GWP
+  complex(kind(0d0)), allocatable :: c_(:)      ! expansion coefficient of e-state
+  integer :: nd_                    ! order of numerical differate
+  character(8) :: inte_RP_          ! euler or RK4
+  double precision :: dydt_, dR_, dP_ ! finite difference for t, R and P
+  double precision :: dt_
+  integer :: nt_, n1t_              ! number of time for print, number for each step
+  private :: dydt_
 contains
   ! ==== Driver =====
   subroutine write_input(ierr)
@@ -39,10 +42,9 @@ contains
     write(*,*) "nf:", nf_
     write(*,*) "ne:", ne_
     write(*,*) "-- init conds --"
-    write(*,*) "gwp%g:", gwp_%g(1,1,1)
-    write(*,*) "gwp%R:", gwp_%R(1,:)
-    write(*,*) "gwp%P:", gwp_%P(1,:)
-    write(*,*) "gwp%c:", gwp_%c(1)
+    write(*,*) "g:", g_
+    write(*,*) "R:", R_(:)
+    write(*,*) "P:", P_(:)
     write(*,*) "c:", c_(:)
     write(*,*) "-- time --"
     write(*,*) "dt:", dt_
@@ -64,41 +66,41 @@ contains
     write(fn, '("out/", I0)') it
     call mkdirp_if_not(fn)
     
-    write(fn, '("out/", I0, "/", A)') it, "gwp_g.csv"
+    write(fn, '("out/", I0, "/", A)') it, "g.csv"
     call open_w(ifile, fn, ierr); check_err(ierr)
     write(ifile, '("val")')
     do k = 1, nf_
-       write(ifile,*) gwp_%g(1,1,1)
+       write(ifile,*) g_
     end do
     close(ifile)
     ifile = ifile + 1
 
-    write(fn, '("out/", I0, "/", A)') it, "gwp_r.csv"
+    write(fn, '("out/", I0, "/", A)') it, "r.csv"
     call open_w(ifile, fn, ierr); check_err(ierr)
     write(ifile, '("val")')
     do k = 1, nf_
-       write(ifile,*) gwp_%R(1,k)
+       write(ifile,*) R_(k)
     end do
     close(ifile)
     ifile = ifile + 1
 
-    write(fn, '("out/", I0, "/", A)') it, "gwp_p.csv"
+    write(fn, '("out/", I0, "/", A)') it, "p.csv"
     call open_w(ifile, fn, ierr); check_err(ierr)
     write(ifile, '("val")')
     do k = 1, nf_
-       write(ifile,*) gwp_%P(1,k)
+       write(ifile,*) P_(k)
     end do
     close(ifile)
     ifile = ifile + 1
 
-    write(fn, '("out/", I0, "/", A)') it, "gwp_c.csv"
+    write(fn, '("out/", I0, "/", A)') it, "c.csv"
     call open_w(ifile, fn, ierr); check_err(ierr)
     write(ifile, '("re,im")')
     do i = 1, ne_
-       write(ifile,'(E20.10,",",E20.10)') real(c_(i)), aimag(c_(i))
+       write(ifile,*) real(c_(i)), ",", aimag(c_(i))
     end do
     close(ifile)
-    ifile = ifile + 1            
+    ifile = ifile + 1    
     
   end subroutine write_res
   subroutine print_res(it)
@@ -106,8 +108,8 @@ contains
     integer k, i
     write(*,'("t: ", F20.10)') (it-1)*n1t_*dt_
     do k = 1, nf_
-       write(*,'("R",I0,": ", F20.10)') k, gwp_%R(1,k)
-       write(*,'("P",I0,": ", F20.10)') k, gwp_%P(1,k)
+       write(*,'("R",I0,": ", F20.10)') k, R_(k)
+       write(*,'("P",I0,": ", F20.10)') k, P_(k)
     end do
     do i = 1, ne_
        write(*,'("re_c",I0,": ", F20.10)') i, real( c_(i))
@@ -133,42 +135,40 @@ contains
     use Mod_sys, only : mkdirp_if_not, open_w
     integer, intent(in) :: it
     character(100) :: fn
+    integer ifile, k, i
     double precision re, im
-    integer i, ifile, k
+
     integer ierr
     ifile = 23422
     write(fn, '("out/", I0)') it
     call mkdirp_if_not(fn)
     
-    write(fn, '("out/", I0, "/", A)') it, "gwp_g.csv"
+    write(fn, '("out/", I0, "/", A)') it, "g.csv"
     call open_w(ifile, fn, ierr); check_err(ierr)
     read(ifile)
-    gwp_%g(:,:,:) = 0
+    read(ifile,*) g_
+    close(ifile)
+    ifile = ifile + 1
+
+    write(fn, '("out/", I0, "/", A)') it, "r.csv"
+    call open_w(ifile, fn, ierr); check_err(ierr)
+    read(ifile)
     do k = 1, nf_
-       read(ifile,*) gwp_%g(1,k,k)
+       read(ifile, *) R_(k)
     end do
     close(ifile)
     ifile = ifile + 1
 
-    write(fn, '("out/", I0, "/", A)') it, "gwp_r.csv"
+    write(fn, '("out/", I0, "/", A)') it, "p.csv"
     call open_w(ifile, fn, ierr); check_err(ierr)
     read(ifile)
     do k = 1, nf_
-       read(ifile, *) gwp_%R(1,k)
+       write(ifile,*) P_(k)
     end do
     close(ifile)
     ifile = ifile + 1
 
-    write(fn, '("out/", I0, "/", A)') it, "gwp_p.csv"
-    call open_w(ifile, fn, ierr); check_err(ierr)
-    read(ifile)
-    do k = 1, nf_
-       write(ifile,*) gwp_%P(1,k)
-    end do
-    close(ifile)
-    ifile = ifile + 1
-
-    write(fn, '("out/", I0, "/", A)') it, "gwp_c.csv"
+    write(fn, '("out/", I0, "/", A)') it, "c.csv"
     call open_w(ifile, fn, ierr); check_err(ierr)
     read(ifile)
     do i = 1, ne_
@@ -176,7 +176,7 @@ contains
        c_(i) = dcmplx(re, im)
     end do
     close(ifile)
-    ifile = ifile + 1            
+    ifile = ifile + 1
     
   end subroutine read_res
   subroutine DyMono_run(calc_H_X)
@@ -227,10 +227,13 @@ contains
     ierr = 0
     nf_  = nf
     ne_ = ne
-    
-    call GWP_new(gwp_, nf, 1, 'c', ierr) ; check_err(ierr)
-    allocate(c_(ne))
-    c_ = 0
+
+    g_ = 1
+    allocate(R_(nf), P_(nf), c_(ne))
+    R_(:) = 0
+    P_(:) = 0
+    c_(:) = 0
+    c_(1) = 1
     m_ = 1
     
     nd_ = 2
@@ -247,7 +250,6 @@ contains
     double precision :: norm2
     double precision, parameter :: tol = 1.0d-15
     ierr = 0
-    call GWP_setup(gwp_, ierr); check_err(ierr)
     norm2 = sum(abs(c_(:))**2)
     if(norm2<tol) then
        begin_err("norm is too small")
@@ -263,6 +265,8 @@ contains
        write(0,*) "inte_RP_:", inte_RP_
        return
     end if
+
+    dydt_ = dt_/n1t_
   end subroutine DyMono_setup
   subroutine DyMono_update(calc_H_X, ierr)
     interface
@@ -285,15 +289,14 @@ contains
 
     call inte_ele_diag(calc_H_X, ierr)
     
-    gwp_%R(1,:) = gwp_%R(1,:) + dR(:)
-    gwp_%P(1,:) = gwp_%P(1,:) + dP(:)
+    R_(:) = R_(:) + dR(:)
+    P_(:) = P_(:) + dP(:)
 
   end subroutine DyMono_update
   subroutine DyMono_delete(ierr)
     integer, intent(out) :: ierr
     ierr = 0
-    call GWP_delete(gwp_, ierr); check_err(ierr)
-    deallocate(c_)
+    deallocate(R_,P_,c_)
   end subroutine DyMono_delete
   ! ==== Private ====
   subroutine inte_nuc_euler(calc_H_X, dR, dP, ierr)
@@ -308,12 +311,12 @@ contains
     double precision :: dotR(nf_), dotP(nf_)
     integer, intent(out) :: ierr
     call dot_RP(calc_H_X, dotR, dotP, ierr)
-    dR(:) = dotR(:)*dt_
-    dP(:) = dotP(:)*dt_
+    dR(:) = dotR(:)*dydt_
+    dP(:) = dotP(:)*dydt_
   end subroutine inte_nuc_euler
   subroutine inte_nuc_RK4(calc_H_X, dR, dP, ierr)
     interface
-       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
+        subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
          double precision, intent(in) :: Q(:)
          complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
          integer, intent(out) :: ierr
@@ -325,27 +328,26 @@ contains
     
     call dot_RP(calc_H_X, kR(1,:), kP(1,:), ierr)
     
-    gwp_%R(1,:) = gwp_%R(1,:) + kR(1,:) * dt_/2
-    gwp_%P(1,:) = gwp_%P(1,:) + kP(1,:) * dt_/2
+    R_(:) = R_(:) + kR(1,:) * dydt_/2
+    P_(:) = P_(:) + kP(1,:) * dydt_/2
     call dot_RP(calc_H_X, kR(2,:), kP(2,:), ierr)
-    gwp_%R(1,:) = gwp_%R(1,:) - kR(1,:) * dt_/2
-    gwp_%P(1,:) = gwp_%P(1,:) - kP(1,:) * dt_/2
+    R_(:) = R_(:) - kR(1,:) * dydt_/2
+    P_(:) = P_(:) - kP(1,:) * dydt_/2
 
-    gwp_%R(1,:) = gwp_%R(1,:) + kR(2,:) * dt_/2
-    gwp_%P(1,:) = gwp_%P(1,:) + kP(2,:) * dt_/2
+    R_(:) = R_(:) + kR(2,:) * dydt_/2
+    P_(:) = P_(:) + kP(2,:) * dydt_/2
     call dot_RP(calc_H_X, kR(3,:), kP(3,:), ierr)
-    gwp_%R(1,:) = gwp_%R(1,:) - kR(2,:) * dt_/2
-    gwp_%P(1,:) = gwp_%P(1,:) - kP(2,:) * dt_/2
+    R_(:) = R_(:) - kR(2,:) * dydt_/2
+    P_(:) = P_(:) - kP(2,:) * dydt_/2
 
-    gwp_%R(1,:) = gwp_%R(1,:) + kR(3,:) * dt_/2
-    gwp_%P(1,:) = gwp_%P(1,:) + kP(3,:) * dt_/2
+    R_(:) = R_(:) + kR(3,:) * dydt_/2
+    P_(:) = P_(:) + kP(3,:) * dydt_/2
     call dot_RP(calc_H_X, kR(3,:), kP(4,:), ierr)
-    gwp_%R(1,:) = gwp_%R(1,:) - kR(3,:) * dt_/2
-    gwp_%P(1,:) = gwp_%P(1,:) - kP(3,:) * dt_/2    
+    R_(:) = R_(:) - kR(3,:) * dydt_/2
+    P_(:) = P_(:) - kP(3,:) * dydt_/2    
 
-    dR(:) =  (kR(1,:) + 2*kR(2,:) + 2*kR(3,:) + kR(4,:)) * dt_/6
-    dP(:) =  (kP(1,:) + 2*kP(2,:) + 2*kP(3,:) + kP(4,:)) * dt_/6
-    
+    dR(:) =  (kR(1,:) + 2*kR(2,:) + 2*kR(3,:) + kR(4,:)) * dydt_/6
+    dP(:) =  (kP(1,:) + 2*kP(2,:) + 2*kP(3,:) + kP(4,:)) * dydt_/6    
     
   end subroutine inte_nuc_RK4
   subroutine inte_ele_diag(calc_H_X, ierr)
@@ -367,7 +369,7 @@ contains
     call lapack_zheev(ne_, H1(:,:), w(:), U(:,:), ierr); check_err(ierr)
     UH(:,:) = conjg(transpose(U(:,:)))
     c_(:) = matmul(UH(:,:), c_(:))
-    c_(:) = exp(-II*w(:)*dt_) * c_(:)
+    c_(:) = exp(-II*w(:)*dydt_) * c_(:)
     c_(:) = matmul(U(:,:), c_(:))
     
   end subroutine inte_ele_diag
@@ -386,19 +388,19 @@ contains
     complex(kind(0d0)) :: dH_dR(ne_,ne_), dH_dP(ne_,ne_)
     if(nd_.eq.2) then
        do k = 1, nf_
-          gwp_%R(1,k) = gwp_%R(1,k) + dR_
+          R_(k) = R_(k) + dR_
           call HIJ(calc_H_X, H1(:,:), ierr)
-          gwp_%R(1,k) = gwp_%R(1,k) - 2*dR_
+          R_(k) = R_(k) - 2*dR_
           call HIJ(calc_H_X, H2(:,:), ierr)
-          gwp_%R(1,k) = gwp_%R(1,k) + dR_
+          R_(k) = R_(k) + dR_
           dH_dR(:,:) = (H1(:,:) - H2(:,:)) / (2*dR_)
           dotP(k) = -real(dot_product(c_(:), matmul(dH_dR(:,:), c_(:))))
 
-          gwp_%P(1,k) = gwp_%P(1,k) + dP_
+          P_(k) = P_(k) + dP_
           call HIJ(calc_H_X, H1(:,:), ierr)
-          gwp_%P(1,k) = gwp_%P(1,k) -2*dP_
+          P_(k) = P_(k) -2*dP_
           call HIJ(calc_H_X, H2(:,:), ierr)
-          gwp_%P(1,k) = gwp_%P(1,k) + dP_
+          P_(k) = P_(k) + dP_
           dH_dP(:,:) = (H1(:,:) - H2(:,:)) / (2*dP_)
           dotR(k) = real(dot_product(c_(:), matmul(dH_dP(:,:), c_(:))))
        end do
@@ -424,7 +426,7 @@ contains
     ierr = 0
     do I = 1, ne_
        res(:,I) = 0
-       res(:,I) = 1
+       res(I,I) = 1
        call Hc(calc_H_X, res(:,I), ierr)
     end do
     
@@ -454,14 +456,14 @@ contains
     integer ierr
     complex(kind(0d0)) :: c0(ne_), Xc0(ne_)
     ierr = 0
-    call calc_H_X(gwp_%R(1,:), HeIJ(:,:), XkIJ(:,:,:), ierr)
+    call calc_H_X(R_(:), HeIJ(:,:), XkIJ(:,:,:), ierr)
     c0(:) = c(:)
 
     c(:) = matmul(HeIJ(:,:), c0(:))
     do k = 1, nf_
        Xc0(:) = matmul(XkIJ(k,:,:), c0(:))
-       c(:) = c(:) + gwp_%P(1,k)**2 * 0.5d0 * c0(:)
-       c(:) = c(:) - II * gwp_%P(1,k) * Xc0(:)
+       c(:) = c(:) + P_(k)*P_(k)/(2*m_) * c0(:)
+       c(:) = c(:) - II * P_(k) * Xc0(:)
        c(:) = c(:) - 0.5d0 * matmul(XkIJ(k,:,:), Xc0(:))
     end do
         

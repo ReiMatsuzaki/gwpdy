@@ -7,4 +7,4 @@ ${TARGET}: ${OBJ_MONO_DY} ${TARGET:%.x=%.f90}
 all: ${TARGET}
 	./$< > out.log
 	python plot.py
-	imgcat fig/r.pdf
+	imgcat fig/prob.pdf

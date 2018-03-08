@@ -13,6 +13,9 @@ contains
     D = 1.0d0
     
     ierr = 0
+    HeIJ(:,:) = 0
+    XkIJ(:,:,:) = 0
+    
     if(x>0) then
        HeIJ(1,1) = A*(1-exp(-B*x))
     else
@@ -21,7 +24,7 @@ contains
     HeIJ(1,2) = C*exp(-D*x**2)
     HeIJ(2,1) = HeIJ(1,2)
     HeIJ(2,2) = -HeIJ(1,1)
-    XkIJ(:,:,:) = 0
+    
   end subroutine tully1_calc_H_X
 end module Mod_Tully1
 
@@ -31,14 +34,12 @@ program main
   integer ierr
   
   call DyMono_new(1, 2, ierr)
-  gwp_%g(1,1,1) = 1
-  gwp_%R(1,1)   = -7
-  gwp_%P(1,1)   = 20
-  gwp_%c(1)     = 0
-  m_  = 2000
-  dt_ = 1.0d0
-  nt_ = 100
-  n1t_ = 10
+  R_(1) = -7
+  P_(1) = 20
+  m_    = 2000
+  dt_   = 20.0d0
+  nt_   = 100
+  n1t_  = 1
   c_(1) = 1
   inte_RP_ = "RK4"
   call DyMono_setup(ierr)
