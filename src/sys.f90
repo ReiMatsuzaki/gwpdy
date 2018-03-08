@@ -29,10 +29,23 @@ contains
     open(ifile, file=fn, status='replace', err=999)
     return
 999 continue
-    begin_err("failed open file")
+    MSG_ERR("failed open file")
     ierr = 1
     write(0,*) "filename:", trim(fn)
     return
   end subroutine open_w
+  subroutine open_r(ifile, fn, ierr)
+    integer, intent(in) :: ifile
+    character(*), intent(in) :: fn
+    integer, intent(out) :: ierr
+    ierr = 0
+    open(ifile, file=fn, status='old', err=999)
+    return
+999 continue
+    MSG_ERR("failed open file")
+    ierr = 1
+    write(0,*) "filename:", trim(fn)
+    return
+  end subroutine open_r
 end module mod_sys
 

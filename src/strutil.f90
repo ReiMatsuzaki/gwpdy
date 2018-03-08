@@ -19,7 +19,7 @@ contains
     read(str, *, iostat=ierr_d) xd    
     
     if(ierr_i .ne. 0 .or. ierr_d.ne.0) then
-       begin_err("failed to convert")
+       MSG_ERR("failed to convert")
        ierr = 1
        write(0,*) "str: ", str
        return
@@ -27,7 +27,7 @@ contains
 
     idx = index(str, ".")
     if(abs(xd-res) > eps .or. idx.ne.0) then
-       begin_err("str is float not integer")
+       MSG_ERR("str is float not integer")
        ierr = 2
        write(0,*) "str: ", str
        return
@@ -42,7 +42,7 @@ contains
     
     read(str, *, iostat=ierr) res
     if(ierr.ne.0) then
-       begin_err("failed to convert")
+       MSG_ERR("failed to convert")
        ierr = 1
        write(0,*) "str:", str
        return
@@ -97,37 +97,37 @@ contains
     double precision :: x0, x1
     integer :: n, i
 
-    call str_split(str, ",", n, lines, ierr); check_err(ierr)
+    call str_split(str, ",", n, lines, ierr); CHK_ERR(ierr)
     if(n < 1) then
-       begin_err("invalid argument")
+       MSG_ERR("invalid argument")
        ierr = 1
        return
     end if
     select case(lines(1))
     case("linspace")
        if(n .ne. 4) then
-          begin_err("invalid argument")
+          MSG_ERR("invalid argument")
           ierr = 1
           return
        end if       
        call str2i(lines(4), nx, ierr)
        if(ierr.ne.0) then
-          begin_err("invalid argument")
+          MSG_ERR("invalid argument")
           ierr = 1
           write(0,*) "str:", str
           write(0,*) "line[4]:", lines(4)
           return
        end if
-       call str2d(lines(2), x0, ierr); check_err(ierr)
-       call str2d(lines(3), x1, ierr); check_err(ierr)
+       call str2d(lines(2), x0, ierr); CHK_ERR(ierr)
+       call str2d(lines(3), x1, ierr); CHK_ERR(ierr)
        do i = 1, nx
           xs(i) = x0 + (i-1)*(x1-x0)/(nx-1)
        end do
     case("scalar")       
        nx = 1
-       call str2d(lines(2), xs(1), ierr); check_err(ierr)
+       call str2d(lines(2), xs(1), ierr); CHK_ERR(ierr)
     case default
-       begin_err("not supported")
+       MSG_ERR("not supported")
        ierr = 1
        write(0,*) "str: ", str
        return

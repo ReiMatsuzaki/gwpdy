@@ -120,7 +120,7 @@ contains
        this%rec(this%size)%act = .true.
     else
        if(this%rec(idx)%act) then
-          begin_err("Timer_start is called for active timer key.")
+          MSG_ERR("Timer_start is called for active timer key.")
           ierr = 1
           write(0,*) "key:", key
           return
@@ -138,13 +138,13 @@ contains
 
     idx = find(this, key)
     if(idx==0) then
-       begin_err("Timer_end is called for not started record")
+       MSG_ERR("Timer_end is called for not started record")
        ierr = 1
        write(0,*) "key:", key
        return
     else
        if(.not.this%rec(idx)%act) then
-          begin_err("Timer_end is called for non active started record")
+          MSG_ERR("Timer_end is called for non active started record")
           ierr = 1
           write(0,*) "key:", key
           return
@@ -185,7 +185,7 @@ contains
        
     do i = 1, this%size
        if(this%rec(i)%act) then
-          begin_err("active record is found.")
+          MSG_ERR("active record is found.")
           ierr = 1
           write(0,*) "key:", this%rec(i)%key
           return

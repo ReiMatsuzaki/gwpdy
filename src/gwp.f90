@@ -25,7 +25,7 @@ contains
     integer, intent(out) :: ierr
     ierr = 0
     if(exp_type.ne.'m' .and. exp_type.ne.'d' .and. exp_type.ne.'c') then
-       begin_err("Invalid argument")
+       MSG_ERR("Invalid argument")
        ierr = 1
        write(1,*) "exp_type must be m,d,u"
        write(*,*) "exp_type:", exp_type

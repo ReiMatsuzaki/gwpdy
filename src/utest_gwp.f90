@@ -9,9 +9,9 @@ contains
     integer, parameter :: dim = 1
     integer, parameter :: num = 3
     integer ierr
-    call GWP_new(gwp, dim, num, 'c', ierr); check_err(ierr)
-    call GWP_setup(gwp, ierr);              check_err(ierr)
-    call GWP_delete(gwp, ierr);             check_err(ierr)
+    call GWP_new(gwp, dim, num, 'c', ierr); CHK_ERR(ierr)
+    call GWP_setup(gwp, ierr);              CHK_ERR(ierr)
+    call GWP_delete(gwp, ierr);             CHK_ERR(ierr)
   end subroutine UTest_GWP_run
 end module UTest_gwp
 

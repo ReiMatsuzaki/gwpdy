@@ -8,24 +8,15 @@ clean:
 	rm -f *.mod
 	rm -f ${BUILD}/*.x
 
+# -- quick lunch  --
+check_%: ${BUILD}/utest_%.x
+	$<
+
 # ==== exe =====
-# -- utest(strutil) --
 ${BUILD}/utest_strutil.x: $(call mod2obj, ${MODS0} utest utest_strutil)
-check_strutil: ${BUILD}/utest_strutil.x
-	$<
-
-# -- utest(gwp) --
+${BUILD}/utest_spline.x: $(call mod2obj, ${MODS0} spline utest utest_spline)
 ${BUILD}/utest_gwp.x: $(call mod2obj, ${MODS0} gwp utest_gwp)
-check_gwp: ${BUILD}/utest_gwp.x
-	$<
-
-# -- utest(dy) --
 ${BUILD}/utest_dy.x: $(call mod2obj, ${MODS0} gwp dy_mono utest utest_dy)
-check_dy: ${BUILD}/utest_dy.x
-	$<
-
-# -- example(Harmonic oscillator) --
-
 
 # -- main --
 ${BUILD}/gwpdy.x: ${BUILD}/gwpdy.a

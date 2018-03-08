@@ -19,7 +19,7 @@ contains
     call ZHEEV('V', 'U', n, U, n, w, work, 2*n, rwork, info)
 
     if(info .ne. 0) then
-       begin_err("Error on ZHEEV")
+       MSG_ERR("Error on ZHEEV")
        ierr = 1
        write(0,*) "info:", info
        write(0,*) "n:", n
