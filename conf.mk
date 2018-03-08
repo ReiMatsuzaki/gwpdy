@@ -1,6 +1,7 @@
 # -- Directories --
 SRC=${PROJ_ROOT}/src
 BUILD=${PROJ_ROOT}/build
+VPATH=${BUILD}:${SRC}
 
 # -- Common --
 ifeq (${FC},gfortran)
@@ -22,4 +23,8 @@ ${BUILD}/%.o: ${SRC}/%.f90
 	   then mkdir -p ${BUILD}; \
 	fi
 	cd ${BUILD}; ${FC} ${FF} ${INCLUDE} -c $< -o $@
+
+# -- objects --
+OBJ_MONO_DY=$(call mod2obj, ${MODS0} gwp dy_mono)
+
 

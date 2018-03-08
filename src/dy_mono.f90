@@ -8,6 +8,7 @@ module Mod_DyMono
   implicit none
   integer :: nf_   ! number of freedom
   integer :: ne_   ! number of electron Hilbert space
+  double precision :: m_ ! mass
   type(Obj_GWP) :: gwp_
   complex(kind(0d0)), allocatable :: c_(:)
   integer :: nd_        ! order of numerical differate
@@ -226,10 +227,12 @@ contains
     ierr = 0
     nf_  = nf
     ne_ = ne
+    
     call GWP_new(gwp_, nf, 1, 'c', ierr) ; check_err(ierr)
     allocate(c_(ne))
     c_ = 0
-
+    m_ = 1
+    
     nd_ = 2
     inte_RP_ = "euler"
     dt_ = 0.1d0
@@ -262,8 +265,6 @@ contains
     end if
   end subroutine DyMono_setup
   subroutine DyMono_update(calc_H_X, ierr)
-    use Mod_const, only : II
-    use Mod_math, only : lapack_zheev
     interface
        subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
          double precision, intent(in) :: Q(:)
@@ -272,24 +273,18 @@ contains
        end subroutine calc_H_X
     end interface
     integer, intent(out) :: ierr
-    double precision :: dR(nf_), dP(nf_), w(ne_)
-    complex(kind(0d0)) :: U(ne_, ne_), UH(ne_, ne_), H1(ne_,ne_)
+    double precision :: dR(nf_), dP(nf_)
 
     ierr = 0
 
     if(inte_RP_.eq."euler") then
-       call inte_RP_euler(calc_H_X, dR(:), dP(:), ierr)
+       call inte_nuc_euler(calc_H_X, dR(:), dP(:), ierr)
     else if(inte_RP_.eq."RK4") then
-       call inte_RP_RK4(calc_H_X, dR(:), dP(:), ierr)
+       call inte_nuc_RK4(calc_H_X, dR(:), dP(:), ierr)
     end if
 
-    call HIJ(calc_H_X, H1(:,:), ierr); check_err(ierr)
-    call lapack_zheev(ne_, H1(:,:), w(:), U(:,:), ierr); check_err(ierr)
-    UH(:,:) = conjg(transpose(U(:,:)))
-    c_(:) = matmul(UH(:,:), c_(:))
-    c_(:) = exp(-II*w(:)*dt_) * c_(:)
-    c_(:) = matmul(U(:,:), c_(:))
-
+    call inte_ele_diag(calc_H_X, ierr)
+    
     gwp_%R(1,:) = gwp_%R(1,:) + dR(:)
     gwp_%P(1,:) = gwp_%P(1,:) + dP(:)
 
@@ -301,7 +296,7 @@ contains
     deallocate(c_)
   end subroutine DyMono_delete
   ! ==== Private ====
-  subroutine inte_RP_euler(calc_H_X, dR, dP, ierr)
+  subroutine inte_nuc_euler(calc_H_X, dR, dP, ierr)
     interface
        subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
          double precision, intent(in) :: Q(:)
@@ -315,8 +310,8 @@ contains
     call dot_RP(calc_H_X, dotR, dotP, ierr)
     dR(:) = dotR(:)*dt_
     dP(:) = dotP(:)*dt_
-  end subroutine inte_RP_euler
-  subroutine inte_RP_RK4(calc_H_X, dR, dP, ierr)
+  end subroutine inte_nuc_euler
+  subroutine inte_nuc_RK4(calc_H_X, dR, dP, ierr)
     interface
        subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
          double precision, intent(in) :: Q(:)
@@ -352,7 +347,30 @@ contains
     dP(:) =  (kP(1,:) + 2*kP(2,:) + 2*kP(3,:) + kP(4,:)) * dt_/6
     
     
-  end subroutine inte_RP_RK4
+  end subroutine inte_nuc_RK4
+  subroutine inte_ele_diag(calc_H_X, ierr)
+    use Mod_const, only : II
+    use Mod_math, only : lapack_zheev
+    interface
+       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
+         double precision, intent(in) :: Q(:)
+         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
+         integer, intent(out) :: ierr
+       end subroutine calc_H_X
+    end interface
+    integer, intent(out) :: ierr
+    complex(kind(0d0)) :: U(ne_, ne_), UH(ne_, ne_), H1(ne_,ne_)
+    double precision :: w(ne_)
+    ierr = 0
+
+    call HIJ(calc_H_X, H1(:,:), ierr); check_err(ierr)
+    call lapack_zheev(ne_, H1(:,:), w(:), U(:,:), ierr); check_err(ierr)
+    UH(:,:) = conjg(transpose(U(:,:)))
+    c_(:) = matmul(UH(:,:), c_(:))
+    c_(:) = exp(-II*w(:)*dt_) * c_(:)
+    c_(:) = matmul(U(:,:), c_(:))
+    
+  end subroutine inte_ele_diag
   subroutine dot_RP(calc_H_X, dotR, dotP, ierr)
     interface
        subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)

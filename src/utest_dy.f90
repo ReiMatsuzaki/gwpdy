@@ -37,10 +37,16 @@ module Mod_UTestDy
   implicit none
 contains
   subroutine UTestDy_run
+    use Mod_Timer    
+    type(Obj_Timer) :: timer
+    integer ierr
+    call Timer_new(timer, "UTestDy", .true., ierr)
     write(*,*)
     write(*,*) "UTestDy begin"
     write(*,*)
+    call Timer_begin(timer, "1f1e", ierr)
     call UTestDy_mono_1f1e
+    call Timer_end(timer, "1f1e", ierr)
     write(*,*)
     write(*,*) "UTestDy end"
     write(*,*)    
