@@ -2,11 +2,11 @@
 module Mod_spline
   use mod_const
   implicit none
-  type Spline
+  type Obj_Spline
      integer :: n
      double precision, allocatable :: x(:), y(:), b(:), c(:), d(:)
      integer :: outvalue
-  end type Spline
+  end type Obj_Spline
 contains
   subroutine make_spline (x, y, b, c, d, n)
   !======================================================================
@@ -147,7 +147,7 @@ contains
   ispline = y(i) + dx*(b(i) + dx*(c(i) + dx*d(i)))
   end function ispline
   subroutine Spline_new(this, n, x, y, out_value, ierr)
-    type(Spline) :: this
+    type(Obj_Spline) :: this
     integer, intent(in) :: n
     double precision, intent(in) :: x(n), y(n)
     character(*), intent(in) :: out_value
@@ -174,7 +174,7 @@ contains
   end subroutine Spline_new
   subroutine Spline_new_file(this, fn, out_value, ierr)
     use Mod_sys, only : open_r
-    type(Spline) :: this
+    type(Obj_Spline) :: this
     character(*), intent(in) :: fn
     character(*), intent(in) :: out_value
     integer, intent(out) :: ierr
@@ -212,12 +212,12 @@ contains
     
   end subroutine Spline_new_file
   subroutine Spline_delete(this)
-    type(Spline) :: this
+    type(Obj_Spline) :: this
     this % n = 0
     deallocate(this%x, this%y, this%b, this%c, this%d)
   end subroutine Spline_delete
   subroutine Spline_dump(this)
-    type(Spline) :: this
+    type(Obj_Spline) :: this
     integer i
     write(*,*) "x, y, b, c, d"
     do i = 1, this % n
@@ -225,7 +225,7 @@ contains
     end do
   end subroutine Spline_dump
   function search_index(this, u) result (res)
-    type(Spline) :: this
+    type(Obj_Spline) :: this
     double precision, intent(in) :: u
     integer res
     integer i, j, k
@@ -245,7 +245,7 @@ contains
     
   end function search_index
   subroutine check_out_of_range(this, u, ierr)
-    type(Spline) :: this
+    type(Obj_Spline) :: this
     double precision, intent(in) :: u
     integer, intent(out) :: ierr
     if(u < this%x(1) .or. u > this%x(this%n)) then
@@ -258,7 +258,7 @@ contains
     end if
   end subroutine check_out_of_range
   subroutine Spline_at(this, u, res, ierr)
-    type(Spline) :: this
+    type(Obj_Spline) :: this
     double precision, intent(in) :: u
     double precision, intent(out) :: res
     integer, intent(out) :: ierr
@@ -298,7 +298,7 @@ contains
     
   end subroutine Spline_at
   subroutine Spline_deriv_at(this, n, u, res, ierr)
-    type(Spline) :: this
+    type(Obj_Spline) :: this
     integer, intent(in) :: n
     double precision, intent(in) :: u
     double precision, intent(out) :: res

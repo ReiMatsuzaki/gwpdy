@@ -1,10 +1,11 @@
 #include "macros.fpp"
 
+
+
 module Mod_DyMono
   ! molecular wave function \Psi are expanded as 
   !     \Psi(r,Q,t) = G(Q,t) \sum_I c_I(t) \Phi_I(r;Q) .
   ! G is auss wave packet
-  use Mod_GWP
   implicit none
   integer :: nf_         ! number of freedom
   integer :: ne_         ! number of electron Hilbert space
@@ -25,7 +26,7 @@ contains
     integer, parameter :: ifile = 921
     integer ierr
     call mkdirp_if_not("out")
-    call open_w(ifile, "out/common.json", ierr); check_err(ierr)
+    call open_w(ifile, "out/common.json", ierr); CHK_ERR(ierr)
     write(ifile, '("{")')
     write(ifile,*) '"nf":', nf_, ","
     write(ifile,*) '"ne":', ne_, ","
@@ -67,7 +68,7 @@ contains
     call mkdirp_if_not(fn)
     
     write(fn, '("out/", I0, "/", A)') it, "g.csv"
-    call open_w(ifile, fn, ierr); check_err(ierr)
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)
     write(ifile, '("val")')
     do k = 1, nf_
        write(ifile,*) g_
@@ -76,7 +77,7 @@ contains
     ifile = ifile + 1
 
     write(fn, '("out/", I0, "/", A)') it, "r.csv"
-    call open_w(ifile, fn, ierr); check_err(ierr)
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)
     write(ifile, '("val")')
     do k = 1, nf_
        write(ifile,*) R_(k)
@@ -85,7 +86,7 @@ contains
     ifile = ifile + 1
 
     write(fn, '("out/", I0, "/", A)') it, "p.csv"
-    call open_w(ifile, fn, ierr); check_err(ierr)
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)
     write(ifile, '("val")')
     do k = 1, nf_
        write(ifile,*) P_(k)
@@ -94,7 +95,7 @@ contains
     ifile = ifile + 1
 
     write(fn, '("out/", I0, "/", A)') it, "c.csv"
-    call open_w(ifile, fn, ierr); check_err(ierr)
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)
     write(ifile, '("re,im")')
     do i = 1, ne_
        write(ifile,*) real(c_(i)), ",", aimag(c_(i))
@@ -144,14 +145,14 @@ contains
     call mkdirp_if_not(fn)
     
     write(fn, '("out/", I0, "/", A)') it, "g.csv"
-    call open_w(ifile, fn, ierr); check_err(ierr)
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)
     read(ifile)
     read(ifile,*) g_
     close(ifile)
     ifile = ifile + 1
 
     write(fn, '("out/", I0, "/", A)') it, "r.csv"
-    call open_w(ifile, fn, ierr); check_err(ierr)
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)
     read(ifile)
     do k = 1, nf_
        read(ifile, *) R_(k)
@@ -160,7 +161,7 @@ contains
     ifile = ifile + 1
 
     write(fn, '("out/", I0, "/", A)') it, "p.csv"
-    call open_w(ifile, fn, ierr); check_err(ierr)
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)
     read(ifile)
     do k = 1, nf_
        write(ifile,*) P_(k)
@@ -169,7 +170,7 @@ contains
     ifile = ifile + 1
 
     write(fn, '("out/", I0, "/", A)') it, "c.csv"
-    call open_w(ifile, fn, ierr); check_err(ierr)
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)
     read(ifile)
     do i = 1, ne_
        read(ifile, *) re, im
@@ -194,7 +195,7 @@ contains
     write(*,*) ""
     write(*,*) "==== Inputs ===="
 
-    call write_input(ierr); check_err(ierr)
+    call write_input(ierr); CHK_ERR(ierr)
     call print_input
 
     write(*, *) "==== read if prev exists ===="
@@ -211,7 +212,7 @@ contains
        call write_res(it)
        call print_res(it)
        do i1t = 1, n1t_
-          call DyMono_update(calc_H_X, ierr); check_err(ierr)
+          call DyMono_update(calc_H_X, ierr); CHK_ERR(ierr)
        end do
     end do
 
@@ -252,7 +253,7 @@ contains
     ierr = 0
     norm2 = sum(abs(c_(:))**2)
     if(norm2<tol) then
-       begin_err("norm is too small")
+       MSG_ERR("norm is too small")
        ierr = 1
        write(0,*) "norm2:", norm2
        return
@@ -260,7 +261,7 @@ contains
     c_(:) = c_(:) / sqrt(norm2)
 
     if(inte_RP_.ne."euler" .and. inte_RP_.ne."RK4") then
-       begin_err("unsupported inte_RP_")
+       MSG_ERR("unsupported inte_RP_")
        ierr = 1
        write(0,*) "inte_RP_:", inte_RP_
        return
@@ -365,8 +366,8 @@ contains
     double precision :: w(ne_)
     ierr = 0
 
-    call HIJ(calc_H_X, H1(:,:), ierr); check_err(ierr)
-    call lapack_zheev(ne_, H1(:,:), w(:), U(:,:), ierr); check_err(ierr)
+    call HIJ(calc_H_X, H1(:,:), ierr); CHK_ERR(ierr)
+    call lapack_zheev(ne_, H1(:,:), w(:), U(:,:), ierr); CHK_ERR(ierr)
     UH(:,:) = conjg(transpose(U(:,:)))
     c_(:) = matmul(UH(:,:), c_(:))
     c_(:) = exp(-II*w(:)*dydt_) * c_(:)
@@ -405,7 +406,7 @@ contains
           dotR(k) = real(dot_product(c_(:), matmul(dH_dP(:,:), c_(:))))
        end do
     else
-       begin_err("invalid nd_")
+       MSG_ERR("invalid nd_")
        ierr = 1
     end if        
   end subroutine dot_RP

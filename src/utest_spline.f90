@@ -9,7 +9,7 @@ contains
   end subroutine UTestSpline_run
   subroutine test_spline
     use Mod_spline
-    type(Spline) spl
+    type(Obj_Spline) spl
     integer, parameter :: n = 20
     double precision :: x(n), y(n), x0
     double precision, parameter :: a = 1.2d0
@@ -44,7 +44,7 @@ contains
   end subroutine test_spline
   subroutine test_spline2
     use Mod_spline
-    type(Spline) spl
+    type(Obj_Spline) spl
     double precision res
     integer ierr
     
