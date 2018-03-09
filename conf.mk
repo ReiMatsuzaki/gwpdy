@@ -25,6 +25,6 @@ ${BUILD}/%.o: ${SRC}/%.f90
 	cd ${BUILD}; ${FC} ${FF} ${INCLUDE} -c $< -o $@
 
 # -- objects --
-OBJ_MONO_DY=$(call mod2obj, ${MODS0} gwp dy_mono)
+OBJ_MONO_DY=$(call mod2obj, ${MODS0} spline mole_fit dy_mono)
 
 

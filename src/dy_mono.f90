@@ -464,8 +464,8 @@ contains
     do k = 1, nf_
        Xc0(:) = matmul(XkIJ(k,:,:), c0(:))
        c(:) = c(:) + P_(k)*P_(k)/(2*m_) * c0(:)
-       c(:) = c(:) - II * P_(k) * Xc0(:)
-       c(:) = c(:) - 0.5d0 * matmul(XkIJ(k,:,:), Xc0(:))
+       c(:) = c(:) - II * P_(k)/m_ * Xc0(:)
+       c(:) = c(:) - 1/(2*m_) * matmul(XkIJ(k,:,:), Xc0(:))
     end do
         
   end subroutine Hc

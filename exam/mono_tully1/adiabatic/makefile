@@ -10,4 +10,5 @@ all: ${TARGET}
 	python plot.py
 	imgcat fig/prob.pdf
 
-
+check: ${TARGET}
+	./$<

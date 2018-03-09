@@ -102,6 +102,10 @@ contains
     call Timer_begin(timer, "1f2e_fit", ierr)
     call test_1f2e_fit
     call Timer_end(timer, "1f2e_fit", ierr)
+
+    call Timer_begin(timer, "branch_1f2e", ierr)
+    call test_branch_1f2e
+    call Timer_end(timer, "branch_1f2e", ierr)
     
     write(*,*)
     write(*,*) "UTestDy end"
@@ -177,10 +181,10 @@ contains
   end subroutine test_1f2e_uncouple
   subroutine test_1f2e_fit
     use Mod_DyMono
-    use Mod_EleNuc1D
+    use Mod_MoleFit
     use Mod_Tully1
     use Mod_sys, only : open_w
-    integer, parameter :: ifile = 29831
+    integer, parameter :: ifile_xs = 29831, ifile_h = 29832, ifile_xk = 29833
     integer ierr, ix, iit, it
     integer, parameter :: nx = 100
     double precision :: x(1)
@@ -189,22 +193,29 @@ contains
     complex(kind(0d0)) :: c0(2), c1(2)
 
     ! -- write data --
-    call open_w(ifile, "data/elenuc_tully1.csv", ierr)
-    write(ifile, '("x,h_1_1,h_1_2,h_2_2,x_1_2")')
+    call open_w(ifile_xs, "data/mole_tully1_xs.csv", ierr)
+    call open_w(ifile_h,  "data/mole_tully1_heij.csv", ierr)
+    call open_w(ifile_xk, "data/mole_tully1_xkij.csv", ierr)
+    write(ifile_xs, '("val")')
+    write(ifile_h , '("i,j,k,val")')
+    write(ifile_xk, '("i,j,k,l,val")')
     do ix = 1, nx
        x(1) = (ix-nx/2) * 0.2d0
        call Tully1_calc_H_X(x(:), HeIJ, XkIJ, ierr)
-       write(ifile, '(f20.10)', advance='no') x(1)
-       write(ifile, '(",",f20.10)', advance='no') real(HeIJ(1,1))
-       write(ifile, '(",",f20.10)', advance='no') real(HeIJ(1,2))
-       write(ifile, '(",",f20.10)', advance='no') real(HeIJ(2,2))
-       write(ifile, '(",",f20.10)', advance='no') real(XkIJ(1,1,2))
-       write(ifile, *)
+       write(ifile_xs,   '(f20.10)') x(1)
+       write(ifile_h , '(i0,",",i0,",",i0,",",f20.10)') ix,1,1,real(HeIJ(1,1))
+       write(ifile_h , '(i0,",",i0,",",i0,",",f20.10)') ix,1,2,real(HeIJ(1,2))
+       write(ifile_h , '(i0,",",i0,",",i0,",",f20.10)') ix,2,2,real(HeIJ(2,2))
+       write(ifile_xk, '(i0,",",i0,",",i0,",",i0,",",f20.10)') ix,1,1,2,real(XkIJ(1,1,2))
     end do
-    close(ifile)
+    close(ifile_xs)
+    close(ifile_h)
+    close(ifile_xk)
 
     ! -- build from file --
-    call EleNuc1D_new_file("data/elenuc_tully1.csv", ierr); CHK_ERR(ierr)
+    call MoleFit_new_file("data/mole_tully1_xs.csv", &
+         "data/mole_tully1_heij.csv", "data/mole_tully1_xkij.csv", &
+         ierr); CHK_ERR(ierr)
     
     ! -- fitting calc --
     call DyMono_new(1, 2, ierr); CHK_ERR(ierr)
@@ -215,7 +226,7 @@ contains
     call DyMono_setup(ierr)
     do it = 1, nt_
        do iit = 1, n1t_
-          call DyMono_update(EleNuc1D_H_X, ierr); CHK_ERR(ierr)
+          call DyMono_update(MoleFit_H_X, ierr); CHK_ERR(ierr)
        end do
     end do
     R0=R_; P0=P_; c0=c_
@@ -242,6 +253,35 @@ contains
     EXPECT_NEAR_C(c0(2), c1(2), 1.0d-4, ierr)
     
   end subroutine test_1f2e_fit
+  subroutine test_branch_1f2e
+    use Mod_DyBranch
+    use Mod_Tully1
+    integer it, iit, ierr
+    ! -- Initialize --
+    call DyBranch_new(1, 2, 1, ierr); CHK_ERR(ierr)
+    R_(1,1) = 1
+    P_(1,1) = 0
+    nt_ = 10
+    n1t_ = 1
+    call DyBranch_setup(ierr)
+
+    ! -- Calculate --
+    do it = 1, nt_
+       if(it.eq.5) then
+          call branch(Tully1_calc_H_X, ierr); CHK_ERR(ierr)
+       end if
+       do iit = 1, n1t_
+          call DyBranch_update(Tully1_calc_H_X, ierr)
+       end do
+    end do
+
+    EXPECT_NEAR_D(1.0d0, abs(cc_(1)), 1.0d-10, ierr)
+    EXPECT_NEAR_D(0.0d0, abs(cc_(2)), 1.0d-10, ierr)
+    
+    ! -- Finalize --
+    call DyBranch_delete(ierr)
+    
+  end subroutine test_branch_1f2e
 end module Mod_UTestDy
 
 program main
