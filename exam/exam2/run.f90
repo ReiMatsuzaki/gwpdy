@@ -35,7 +35,7 @@ program main
   
   call DyMono_new(1, 2, ierr)
   R_(1) = -7
-  P_(1) = 20
+  P_(1) = 15
   m_    = 2000
   dt_   = 20.0d0
   nt_   = 100

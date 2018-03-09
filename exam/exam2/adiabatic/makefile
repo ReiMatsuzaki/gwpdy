@@ -1,12 +1,12 @@
 include ../../../local.mk
 include ../../../conf.mk
 
-TARGET=mono_tully1.x
+TARGET=run.x
 
-${TARGET}: ${OBJ_MONO_DY} ${TARGET:%.x=%.f90}
+${TARGET}: ${OBJ_MONO_DY} run.f90
 all: ${TARGET}
 	python pot.py
-	./$< > out.log
+	./$< > run.log
 	python plot.py
 	imgcat fig/prob.pdf
 

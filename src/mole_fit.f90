@@ -135,9 +135,9 @@ contains
     ierr = 0
     do i = 1, ne_
        do j = 1, ne_
-          call Spline_at(spl_HeIJ_(i,j), Q(1), h, ierr)
+          call Spline_at(spl_HeIJ_(i,j), Q(1), h, ierr); CHK_ERR(ierr)
           HeIJ(i,j) = h
-          call Spline_at(spl_XkIJ_(i,j), Q(1), x, ierr)
+          call Spline_at(spl_XkIJ_(i,j), Q(1), x, ierr); CHK_ERR(ierr)
           XkIJ(1,i,j) = x
        end do
     end do

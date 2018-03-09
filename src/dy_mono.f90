@@ -107,7 +107,7 @@ contains
   subroutine print_res(it)
     integer, intent(in) :: it
     integer k, i
-    write(*,'("t: ", F20.10)') (it-1)*n1t_*dt_
+    write(*,'("t: ", F20.10)') it*n1t_*dt_
     do k = 1, nf_
        write(*,'("R",I0,": ", F20.10)') k, R_(k)
        write(*,'("P",I0,": ", F20.10)') k, P_(k)
@@ -341,11 +341,11 @@ contains
     R_(:) = R_(:) - kR(2,:) * dydt_/2
     P_(:) = P_(:) - kP(2,:) * dydt_/2
 
-    R_(:) = R_(:) + kR(3,:) * dydt_/2
-    P_(:) = P_(:) + kP(3,:) * dydt_/2
-    call dot_RP(calc_H_X, kR(3,:), kP(4,:), ierr)
-    R_(:) = R_(:) - kR(3,:) * dydt_/2
-    P_(:) = P_(:) - kP(3,:) * dydt_/2    
+    R_(:) = R_(:) + kR(3,:) * dydt_
+    P_(:) = P_(:) + kP(3,:) * dydt_
+    call dot_RP(calc_H_X, kR(4,:), kP(4,:), ierr)
+    R_(:) = R_(:) - kR(3,:) * dydt_
+    P_(:) = P_(:) - kP(3,:) * dydt_
 
     dR(:) =  (kR(1,:) + 2*kR(2,:) + 2*kR(3,:) + kR(4,:)) * dydt_/6
     dP(:) =  (kP(1,:) + 2*kP(2,:) + 2*kP(3,:) + kP(4,:)) * dydt_/6    
