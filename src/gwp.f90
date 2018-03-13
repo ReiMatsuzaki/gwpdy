@@ -198,4 +198,25 @@ contains
     end do
     
   end subroutine GWP_p2
+  subroutine GWP_r1(this, res, ierr)
+    use Mod_const, only : ii
+    type(Obj_GWP), intent(in) :: this
+    complex(kind(0d0)), intent(out) :: res(:,:,:)
+    integer, intent(out) :: ierr
+    integer i, j, k
+    ierr = 0
+
+    if(this%exp_type.ne."d" .and. this%exp_type.ne."c") then
+       MSG_ERR("only exp_type==c,d is supported")
+       return
+    end if
+
+    do i = 1, this%num
+       do j = 1, this%num
+          do k = 1, this%nf
+             res(k,i,j) = 1
+          end do
+       end do
+    end do
+  end subroutine GWP_r1
 end module Mod_GWP

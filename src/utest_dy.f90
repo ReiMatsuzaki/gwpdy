@@ -267,11 +267,12 @@ contains
 
     ! -- Calculate --
     do it = 1, nt_
-       if(it.eq.5) then
-          call branch(Tully1_calc_H_X, ierr); CHK_ERR(ierr)
-       end if
+       !       if(it.eq.5) then
+       !          call branch(Tully1_calc_H_X, ierr); CHK_ERR(ierr)
+       !       end if
        do iit = 1, n1t_
-          call DyBranch_update(Tully1_calc_H_X, ierr)
+          !      call DyBranch_update(Tully1_calc_H_X, ierr)
+          call DyBranch_update(Tully1_calc_H_X, ierr); CHK_ERR(ierr)
        end do
     end do
 

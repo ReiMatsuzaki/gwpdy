@@ -201,7 +201,7 @@ contains
     ! H_{KL} = <G_K c_{I,K} Phi_I | H | G_L c_{J,L} Phi_J >
     !        = c_{I,K}c_{I,L} <G_K|T|G_L> +
     !          c_{I,K}c_{J,L} (P_K+P_L)/2 (X_{IJ}(Q_K) + X_{IJ}(Q_L))/2 (K,L)
-    use Mod_GWP
+    integer, intent(out) :: ierr
     interface
        subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
          double precision, intent(in) :: Q(:)
@@ -209,46 +209,8 @@ contains
          integer, intent(out) :: ierr
        end subroutine calc_H_X
     end interface
-    integer, intent(out) :: ierr
-    double precision :: dotR(npath_,nf_), dotP(npath_,nf_)
-    integer KK, LL, k
-    complex(kind(0d0)) :: HK(npath_,ne_,ne_), HH(npath_,npath_)
-    complex(kind(0d0)) :: c_KL(npath_,napth_), tmp
-    complex(kind(0d0)) :: P2(nf_, npath_,npath_), S(path_,npath_)
-    type(Obj_GWP) :: gwp
 
-    ierr = 0
-
-    do KK = 1, npath_
-       call dot_RP(calc_H_X, KK, dotR(KK,:), dotP(KK,:), ierr); CHK_ERR(ierr)
-       call HIJ(calc_H_X, KK, HK(KK,:,:), ierr); CHK_ERR(ierr)
-    end do
-    call make_GWP(gwp, ierr); CHK_ERR(ierr)
-    call gwp_overlap(gwp, S(:,:), ierr); CHK_ERR(ierr)
-    call gwp_p2(gwp, P2(:,:,:), ierr); CHK_ERR(ierr)
-    call GWP_delete(gwp, ierr); CHK_ERR(ierr)
-    c_KL(:,:) = 0
-    do KK = 1, npath_
-       do LL = 1, npath_
-          c_KL(KK,LL) = dot_product(c_(:,KK), c_(:,LL))
-       end do
-    end do    
-    HH(:,:) = 0
-    do KK = 1, npath_
-       do LL = 1, npath_
-          tmp = 0
-          do k = 1, nf_
-             tmp = tmp + c_KL(KK,LL)*P2(k, KK, LL)/(2*m_)
-             tmp = tmp - ii* (P_(KK,k)+P_(LL,k))/2 * (X_())
-          end do
-          HH(KK,LL) = tmp
-       end do
-    end do
-    
-    call inte_ele_diag(calc_H_X, ierr); CHK_ERR(ierr)
-
-    R_(1:npath_,:) = R_(1:npath_,:) + dR(:,:)
-    P_(1:npath_,:) = P_(1:npath_,:) + dP(:,:)
+    call Update1st(calc_H_X, ierr); CHK_ERR(ierr)
     
   end subroutine DyBranch_update
   subroutine DyBranch_delete(ierr)
@@ -259,6 +221,57 @@ contains
   end subroutine DyBranch_delete
   ! ==== 1st order ====  
   ! ==== Calc ====  
+  subroutine Update1st(calc_H_X, ierr)
+    ! update with diagonal method for coefficient and Eulaer for (R,P).
+    ! H_{KL} = <G_K c_{I,K} Phi_I | H | G_L c_{J,L} Phi_J >
+    !        = c_{I,K}c_{I,L} <G_K|T|G_L> +
+    !          c_{I,K}c_{J,L} (P_K+P_L)/2 (X_{IJ}(Q_K) + X_{IJ}(Q_L))/2 (K,L)
+    use Mod_GWP
+    use Mod_const, only : ii
+    interface
+       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
+         double precision, intent(in) :: Q(:)
+         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
+         integer, intent(out) :: ierr
+       end subroutine calc_H_X
+    end interface
+    integer, intent(out) :: ierr
+    double precision :: dotR(npath_,nf_), dotP(npath_,nf_)
+    integer KK
+    complex(kind(0d0)) :: H(ne_,ne_), HH(npath_,npath_)
+    complex(kind(0d0)) :: HeIJ(npath_,ne_,ne_), XkIJ(npath_,nf_,ne_,ne_)
+    complex(kind(0d0)) :: P2(nf_, npath_,npath_), S(npath_,npath_)
+    type(Obj_GWP) :: gwp
+
+    ierr = 0
+
+    ! -- nuclear part --
+    call make_GWP(gwp, ierr); CHK_ERR(ierr)
+    call gwp_overlap(gwp, S(:,:), ierr); CHK_ERR(ierr)
+    call gwp_p2(gwp, P2(:,:,:), ierr); CHK_ERR(ierr)
+    call GWP_delete(gwp, ierr); CHK_ERR(ierr)
+
+    ! -- electron part --
+    do KK = 1, npath_
+       call dot_RP(calc_H_X, KK, dotR(KK,:), dotP(KK,:), ierr);      CHK_ERR(ierr)
+       call calc_H_X(R_(KK,:), HeIJ(KK,:,:), XkIJ(KK,:,:,:), ierr);  CHK_ERR(ierr)
+    end do
+
+    ! -- propagate parameters --
+    do KK = 1, npath_
+       call local_HIJ(HeIJ(KK,:,:), XkIJ(KK,:,:,:), P_(KK,:), H(:,:), ierr)
+       CHK_ERR(ierr)
+       call intet_diag(ne_, HH(:,:), c_(KK,:), ierr); CHK_ERR(ierr)
+    end do
+
+    call global_HIJ(HeIJ(:,:,:), XkIJ(:,:,:,:), s(:,:), p2(:,:,:), HH(:,:), ierr)
+    CHK_ERR(ierr)
+    call intet_diag(ne_, HH(:,:), cc_(:), ierr); CHK_ERR(ierr)
+    
+    R_(1:npath_,:) = R_(1:npath_,:) + dotR(:,:)*dydt_
+    P_(1:npath_,:) = P_(1:npath_,:) + dotP(:,:)*dydt_
+    
+  end subroutine Update1st
   subroutine inte_nuc_euler(calc_H_X, dR, dP, ierr)
     interface
        subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
@@ -317,23 +330,16 @@ contains
     end do
     
   end subroutine inte_nuc_RK4
-  subroutine branch(calc_H_X, ierr)
+  subroutine branch(H, ierr)
     use Mod_math, only : lapack_zheev
-    interface
-       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
-         double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
-         integer, intent(out) :: ierr
-       end subroutine calc_H_X
-    end interface
+    complex(kind(0d0)), intent(in) :: H(:,:)
     integer, intent(out) :: ierr
     integer K
     double precision ::  w(ne_)
-    complex(kind(0d0)) :: H(ne_, ne_), U(ne_, ne_)
+    complex(kind(0d0)) :: U(ne_, ne_)
     
     ierr = 0
     K = 1
-    call HIJ(calc_H_X, K, H, ierr); CHK_ERR(ierr)
     call lapack_zheev(ne_, H(:,:), w(:), U(:,:), ierr); CHK_ERR(ierr)
     
     npath_ = ne_
@@ -347,9 +353,7 @@ contains
     c_(1:npath_,:) = transpose(U(:,:))
     
   end subroutine branch
-  subroutine inte_ele_diag(calc_H_X, ierr)
-    use Mod_const, only : II
-    use Mod_math, only : lapack_zheev
+  subroutine dot_RP(calc_H_X, KK, dotR, dotP, ierr)
     interface
        subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
          double precision, intent(in) :: Q(:)
@@ -357,53 +361,36 @@ contains
          integer, intent(out) :: ierr
        end subroutine calc_H_X
     end interface
-    integer, intent(out) :: ierr
-    complex(kind(0d0)) :: U(ne_, ne_), UH(ne_, ne_), H(ne_,ne_)
-    double precision :: w(ne_)
-    integer KK
-    ierr = 0
-
-    do KK = 1, npath_
-       call HIJ(calc_H_X, KK, H(:,:), ierr); CHK_ERR(ierr)
-       call lapack_zheev(ne_, H(:,:), w(:), U(:,:), ierr); CHK_ERR(ierr)
-       UH(:,:) = conjg(transpose(U(:,:)))
-       c_(KK,:) = matmul(UH(:,:), c_(KK,:))
-       c_(KK,:) = exp(-II*w(:)*dydt_) * c_(KK,:)
-       c_(KK,:) = matmul(U(:,:), c_(KK,:))
-    end do
-    
-  end subroutine inte_ele_diag
-  subroutine dot_RP(calc_H_X, K, dotR, dotP, ierr)
-    interface
-       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
-         double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
-         integer, intent(out) :: ierr
-       end subroutine calc_H_X
-    end interface
-    integer, intent(in) :: K
+    integer, intent(in) :: KK
     double precision, intent(out) :: dotR(:), dotP(:)
     integer, intent(out) :: ierr
     integer i
+    complex(kind(0d0)) :: HeIJ(ne_,ne_)
+    complex(kind(0d0)) :: XkIJ(nf_,ne_,ne_)
     complex(kind(0d0)) :: H1(ne_,ne_), H2(ne_,ne_)
     complex(kind(0d0)) :: dH_dR(ne_,ne_), dH_dP(ne_,ne_)
     if(nd_.eq.2) then
+       call calc_H_X(R_(KK,:), HeIJ(:,:), XkIJ(:,:,:), ierr); CHK_ERR(ierr)
        do i = 1, nf_
-          R_(K,i) = R_(K,i) + dR_
-          call HIJ(calc_H_X, K, H1(:,:), ierr); CHK_ERR(ierr)
-          R_(K,i) = R_(K,i) - 2*dR_
-          call HIJ(calc_H_X, K, H2(:,:), ierr); CHK_ERR(ierr)
-          R_(K,i) = R_(K,i) + dR_
-          dH_dR(:,:) = (H1(:,:) - H2(:,:)) / (2*dR_); CHK_ERR(ierr)
-          dotP(i) = -real(dot_product(c_(K,:), matmul(dH_dR(:,:), c_(K,:))))
-
-          P_(K,i) = P_(K,i) + dP_
-          call HIJ(calc_H_X, K, H1(:,:), ierr); CHK_ERR(ierr)
-          P_(K,i) = P_(K,i) -2*dP_
-          call HIJ(calc_H_X, K, H2(:,:), ierr); CHK_ERR(ierr)
-          P_(K,i) = P_(K,i) + dP_
-          dH_dP(:,:) = (H1(:,:) - H2(:,:)) / (2*dP_)
-          dotR(i) = real(dot_product(c_(K,:), matmul(dH_dP(:,:), c_(K,:))))
+          P_(KK,i) = P_(KK,i) + dP_
+          call local_HIJ(HeIJ, XkIJ, P_(KK,:), H1(:,:), ierr); CHK_ERR(ierr)
+          P_(KK,i) = P_(KK,i) -2*dP_
+          call local_HIJ(HeIJ, XkIJ, P_(KK,:), H2(:,:), ierr); CHK_ERR(ierr)
+          P_(KK,i) = P_(KK,i) + dP_
+          dH_dP(:,:) = (H1(:,:) - H2(:,:)) / (2*dR_)
+          dotR(i) = real(dot_product(c_(KK,:), matmul(dH_dP(:,:), c_(KK,:))))
+       end do
+       
+       do i = 1, nf_
+          R_(KK,i) = R_(KK,i) + dR_
+          call calc_H_X(R_(KK,:), HeIJ(:,:), XkIJ(:,:,:), ierr); CHK_ERR(ierr)
+          call local_HIJ(HeIJ, XkIJ, P_(KK,:), H1(:,:), ierr); CHK_ERR(ierr)
+          R_(KK,i) = R_(KK,i) - 2*dR_
+          call calc_H_X(R_(KK,:), HeIJ(:,:), XkIJ(:,:,:), ierr); CHK_ERR(ierr)
+          call local_HIJ(HeIJ, XkIJ, P_(KK,:), H2(:,:), ierr); CHK_ERR(ierr)
+          R_(KK,i) = R_(KK,i) + dR_
+          dH_dR(:,:) = (H1(:,:) - H2(:,:)) / (2*dR_)
+          dotP(i) = -real(dot_product(c_(KK,:), matmul(dH_dR(:,:), c_(KK,:))))
        end do
     else
        MSG_ERR("invalid nd_")
@@ -427,244 +414,68 @@ contains
     call GWP_setup(gwp, ierr); CHK_ERR(ierr)
     
   end subroutine make_gwp
-  subroutine HIJ(calc_H_X, KK, res, ierr)
+  subroutine local_HIJ(HeIJ, XkIJ, P, res, ierr)
     use Mod_const, only : II
-    interface
-       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
-         double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
-         integer, intent(out) :: ierr
-       end subroutine calc_H_X
-    end interface
-    integer, intent(in) :: KK
+    complex(kind(0d0)), intent(in) :: HeIJ(:,:), XkIJ(:,:,:)
+    double precision, intent(in) :: P(:)
     complex(kind(0d0)), intent(out) :: res(:,:)
     integer,intent(out) ::  ierr
-    !    type(Obj_GWP) :: gwp
-    complex(kind(0d0)) :: H(ne_,ne_), X(nf_,ne_,ne_)
-    !    complex(kind(0d0)) :: s(npath_,npath_), p2(nf_,npath_,npath_)
     integer k
     
-
-    call calc_H_X(R_(KK,:), H(:,:), X(:,:,:), ierr); CHK_ERR(ierr)
-    !    call make_gwp(gwp, ierr); CHK_ERR(ierr)
-    !    call gwp_overlap(gwp, s, ierr); CHK_ERR(ierr)
-    !    call gwp_p2(gwp, p2, ierr); CHK_ERR(ierr)
-    
     ierr = 0
-    res(:,:) = H(:,:)
+    res(:,:) = HeIJ(:,:)
     do k = 1, nf_
-       res(:,:) = res(:,:) + 1/(2*m_)*P_(KK,k)**2
-       res(:,:) = res(:,:) - II * X(k,:,:)*P_(KK,k)/m_
-       res(:,:) = res(:,:) - 1/(2*m_) * matmul(X(k,:,:), X(k,:,:))
+       res(:,:) = res(:,:) + 1/(2*m_)*P(k)**2
+       res(:,:) = res(:,:) - II * XkIJ(k,:,:)*P(k)/m_
+       res(:,:) = res(:,:) - 1/(2*m_) * matmul(XkIJ(k,:,:), XkIJ(k,:,:))
     end do
     
-  end subroutine HIJ
-  subroutine global_HIJ(calc_H_X, res, ierr)
-    use Mod_GWP
+  end subroutine LOCAL_HIJ
+  subroutine global_HIJ(HeIJ,XkIJ, S, P2, res, ierr)
     use Mod_const, only : II
-    interface
-       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
-         double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
-         integer, intent(out) :: ierr
-       end subroutine calc_H_X
-    end interface
+    complex(kind(0d0)), intent(in) :: HeIJ(:,:,:), XkIJ(:,:,:,:), S(:,:), P2(:,:,:)
     complex(kind(0d0)), intent(out) :: res(:,:)
     integer, intent(out) :: ierr
-    type(Obj_GWP) :: gwp
-    complex(kind(0d0)) :: H(ne_,ne_), X(nf_,ne_,ne_)
     complex(kind(0d0)) :: HH(npath_), XX(nf_,npath_)
-    complex(kind(0d0)) :: s(npath_,npath_), p2(nf_,npath_,npath_)
     integer :: KK, LL, k
     complex(kind(0d0)) :: tmp
     ierr = 0
     
-    call make_gwp(gwp, ierr); CHK_ERR(ierr)
-    call gwp_overlap(gwp, s, ierr); CHK_ERR(ierr)
-    call gwp_p2(gwp, p2, ierr); CHK_ERR(ierr)
-
     do KK = 1, npath_
-       call calc_H_X(R_(KK,:), H(:,:), X(:,:,:), ierr); CHK_ERR(ierr)
-       HH(KK) = dot_product(c_(KK,:), matmul(H(:,:), c_(KK,:)))
+       HH(KK) = dot_product(c_(KK,:), matmul(HeIJ(KK,:,:), c_(KK,:)))
        do k = 1, nf_
-          XX(k,KK) = dot_product(c_(KK,:), matmul(X(k,:,:), c_(KK,:)))
+          XX(k,KK) = dot_product(c_(KK,:), matmul(XkIJ(KK,k,:,:), c_(KK,:)))
        end do
     end do
 
     res(:,:) = 0
-    do KK = 1, npath_
+    do KK = 1, npath_       
        do LL = 1, npath_
-          tmp = H(KK,LL)
+          tmp = (HH(KK)+HH(LL))/2
           do k = 1, nf_
              tmp = tmp + p2(k,KK,LL)/(2*m_)
-             tmp = tmp + 1/m_*(P_(KK,k)+P_(LL,k))/2*(XX(k,KK)+XX(k,LL))/2 * s(KK,LL)
+             tmp = tmp + (P_(KK,k)+P_(LL,k))/(2*m_)*(XX(k,KK)+XX(k,LL))/2 * s(KK,LL)
           end do
           res(KK,LL) = res(KK,LL) + tmp
        end do
     end do
   end subroutine global_HIJ
+  subroutine intet_diag(n, H, c, ierr)
+    use Mod_const, only : II
+    use Mod_math, only  : lapack_zheev
+    integer, intent(in) :: n
+    complex(kind(0d0)), intent(in) :: H(n,n)
+    complex(kind(0d0)), intent(inout) :: c(n)
+    integer, intent(out) :: ierr
+    double precision :: w(n)
+    complex(kind(0d0)) :: U(n,n), UH(n,n)
+
+    call lapack_zheev(n, H, w, U, ierr); CHK_ERR(ierr)
+    UH(:,:) = conjg(transpose(U(:,:)))
+    c(:)   = matmul(UH(:,:),       c(:))
+    c(:)   = exp(-II*w(:)*dydt_) * c(:)
+    c(:)   = matmul(U(:,:),        c(:))
+    
+  end subroutine intet_diag
 end module Mod_DyBranch
 
-module Mod_Updater1st
-  implicit none
-  use Mod_DyBranch
-  use Mod_GWP
-  complex(kind(0d0)), allocatable  :: HeIJ_(:,:,:), XkIJ_(:,:,:,:)
-  complex(kind(0d0)), allocatable  :: s_(:,:), p2_(:,:,:)
-  type(Obj_GWP) :: gwp_
-contains
-  subroutine updater1st_new(ierr)
-    integer, intent(out) :: ierr
-    ierr = 0
-    call GWP_new(gwp_, nf_, npath_, "d", ierr); CHK_ERR(ierr)    
-  end subroutine updater1st_new
-  subroutine updaate_1st(calc_H_X, ierr)
-    interface
-       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
-         double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
-         integer, intent(out) :: ierr
-       end subroutine calc_H_X
-    end interface
-    integer, intent(out) :: ierr
-    double precision :: dotR(npath_,nf_), dotP(npath_,nf_)
-    integer KK, LL, k
-    complex(kind(0d0)) :: HK(npath_,ne_,ne_), HH(npath_,npath_)
-    
-    ierr  = 0
-    do KK = 1, npath_
-       call dot_RP(calc_H_X, KK, dotR, dotP, ierr); CHK_ERR(ierr)
-    end do
-
-    call update_emat(calc_H_X, ierr); CHK_ERR(ierr)
-    call update_nmat(ierr); CHK_ERR(ierr)
-
-    call calc_HK(HK, ierr); CHK_ERR(ierr)
-    call calc_global_H(dotR, HH, ierr); CHK_ERR(ierr)
-    
-  end subroutine updaate_1st
-  subroutine update_emat(calc_H_X, ierr)
-    interface
-       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
-         double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
-         integer, intent(out) :: ierr
-       end subroutine calc_H_X
-    end interface
-    integer, intent(out) :: ierr
-    integer KK
-    do KK = 1, npath_
-       call calc_H_X(R_(KK,:), HeIJ, XkIJ, ierr); CHK_ERR(ierr)
-    end do
-  end subroutine update_emat
-  subroutine update_nmat(ierr)
-    integer, intent(out) :: ierr
-    integer KK, k
-    do KK = 1, npath_
-       do k = 1, nf_
-          gwp%g(KK,k,k) = g_(KK)
-          gwp%R(KK,k)   = R_(KK,k)
-          gwp%P(KK,k)   = P_(KK,k)
-          gwp%c(KK)     = theta_(KK)
-       end do
-    end do
-    call GWP_setup(gwp, ierr); CHK_ERR(ierr)
-    
-  end subroutine update_nmat
-  subroutine calc_HK(res, ierr)    
-    complex(kind(0d0)), intent(out) :: res(:,:,:)
-    integer, intent(out) :: ierr
-    integer KK, k
-    ierr = 0
-    
-    do KK = 1, npath_
-       res(KK,:,:) = HeIJ_(KK,:,:)
-       do k = 1, nf_
-          res(KK,:,:) = res(KK,:,:) + 1/(2*m_)*P_(KK,k)**2
-          res(KK,:,:) = res(KK,:,:) - II * XkIJ_(KK,k,:,:)*P_(KK,k)/m_
-          res(KK,:,:) = res(KK,:,:) - 1/(2*m_) * matmul(XkIJ_(KK,k,:,:), XkIJ_(KK,k,:,:))
-       end do
-    end do
-
-  end subroutine calc_HK
-  subroutine calc_global_t(dotR, dotc, res, ierr)
-    use Mod_const, only : II
-    double precision, intent(in) :: dotR(:,:)
-    complex(kind(0d0)), intent(in) :: dotc(:,:)
-    complex(kind(0d0)), intent(out) :: res(:,:)
-    integer, intent(out) :: ierr
-    integer KK, LL
-    do KK = 1, npath_
-       do LL = 1, npath_
-          res(KK, LL) = -dot_product(dotR(LL,:), P_(LL,:)) * S_(KK,LL) &
-               * dot_product(c_(KK,:), c_(LL,:)) &
-               -II* sum(conjg(c(KK,:))*dotc(LL,:)) * S_(KK,LL)
-       end do
-    end do
-  end subroutine calc_global_t
-  subroutine calc_global_H(res, ierr)
-    complex(kind(0d0)), intent(out) :: res(:,:)
-    integer, intent(out) :: ierr
-    integer KK, LL, I, J
-    complex(kind(0d0)) :: H(npath_,npath_,ne_,ne_), tmp, x, dr
-    ierr = 0
-    do KK = 1, npath_
-       do LL = 1, npath_
-          H(KK,LL,:,:) = (HeIJ(KK,:,:)+HeIJ(LL,:,:))/2
-          do k = 1, nf_
-             do I = 1, ne_             
-                H(KK,LL,I,I) = H(KK,LL,I,I) + p2(k,KK,LL)/(2*m_)
-             end do
-          end do             
-          dr = (P(KK,k)+P(LL,k))/(2*m_)
-          x  = 
-          H(KK,LL,I,J) = H(KK,LL,I,J) &
-               -II*dr*(XkIJ(KK,:,:)+XkIJ(LL,:,:))/2*s(KK,LL)               
-       end do
-    end do
-
-    do KK = 1, nf_
-       do LL = 1, nf_
-          res(KK,LL) = dot_product(c_(KK,:), matmul(H(KK,LL,:,:)*c_(LL,:))) 
-       end do
-    end do
-    
-  end subroutine calc_global_H
-  subroutine dot_RP(calc_H_X, K, dotR, dotP, ierr)
-    interface
-       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
-         double precision, intent(in) :: Q(:)
-         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
-         integer, intent(out) :: ierr
-       end subroutine calc_H_X
-    end interface
-    integer, intent(in) :: K
-    double precision, intent(out) :: dotR(:), dotP(:)
-    integer, intent(out) :: ierr
-    integer i
-    complex(kind(0d0)) :: H1(ne_,ne_), H2(ne_,ne_)
-    complex(kind(0d0)) :: dH_dR(ne_,ne_), dH_dP(ne_,ne_)
-    if(nd_.eq.2) then
-       do i = 1, nf_
-          R_(K,i) = R_(K,i) + dR_
-          call HIJ(calc_H_X, K, H1(:,:), ierr); CHK_ERR(ierr)
-          R_(K,i) = R_(K,i) - 2*dR_
-          call HIJ(calc_H_X, K, H2(:,:), ierr); CHK_ERR(ierr)
-          R_(K,i) = R_(K,i) + dR_
-          dH_dR(:,:) = (H1(:,:) - H2(:,:)) / (2*dR_); CHK_ERR(ierr)
-          dotP(i) = -real(dot_product(c_(K,:), matmul(dH_dR(:,:), c_(K,:))))
-
-          P_(K,i) = P_(K,i) + dP_
-          call HIJ(calc_H_X, K, H1(:,:), ierr); CHK_ERR(ierr)
-          P_(K,i) = P_(K,i) -2*dP_
-          call HIJ(calc_H_X, K, H2(:,:), ierr); CHK_ERR(ierr)
-          P_(K,i) = P_(K,i) + dP_
-          dH_dP(:,:) = (H1(:,:) - H2(:,:)) / (2*dP_)
-          dotR(i) = real(dot_product(c_(K,:), matmul(dH_dP(:,:), c_(K,:))))
-       end do
-    else
-       MSG_ERR("invalid nd_")
-       ierr = 1
-    end if        
-  end subroutine dot_RP
-end module Mod_Updater1st
