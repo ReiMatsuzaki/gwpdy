@@ -22,6 +22,8 @@ ts = np.arange(nt)*dt
 
 rs = []
 ps = []
+cs = []
+ccs = []
 prob1 = []
 for it in range(nt):
     dir_it = join("out", str(it))
@@ -36,9 +38,13 @@ for it in range(nt):
     if(npath==1):
         rs.append([r[0,0], 0.0])
         ps.append([p[0,0], 0.0])
+        cs.append( [[c[0,0], c[0,1]], [0.0, 0.0]])
+        ccs.append([cc[0],          0.0])
     else:
         rs.append([r[0,0], r[1,0]])
         ps.append([p[0,0], p[1,0]])
+        cs.append( [[c[0,0], c[0,1]], [c[1,0], c[1,1]]])
+        ccs.append([cc[0],  cc[1]])
         
     p1 = abs(np.sum(cc[:]*c[:,0]))**2
     prob1.append(p1)
@@ -59,8 +65,32 @@ plt.ylim(14,16)
 plt.savefig("fig/p.pdf")
 plt.close()
 
-plt.plot(ts, prob1)
+cs = np.array(cs)
+ccs= np.array(ccs)
+plt.plot(ts[:n], abs(cs[:,0,0])**2, "r", label="1,1")
+plt.plot(ts[:n], abs(cs[:,0,1])**2, "b", label="1,2")
+plt.plot(ts[:n], abs(cs[:,1,0])**2, "r--", label="2,1")
+plt.plot(ts[:n], abs(cs[:,1,1])**2, "b--", label="2,2")
+plt.xlabel(r"$t$/fs", fontsize=15)
+plt.legend()
+plt.savefig("fig/probIJ.pdf")
+plt.close()
+
+n = len(prob1)
+plt.plot(ts[:n], prob1[:n])
 plt.savefig("fig/prob.pdf")
+plt.close()
+
+c1 = ccs[:,0]*cs[:,0,0] + ccs[:,1]*cs[:,1,0]
+c2 = ccs[:,0]*cs[:,0,1] + ccs[:,1]*cs[:,1,1]
+plt.plot(ts[:n], abs(c1)**2+abs(c2)**2, label="whole")
+n1 = np.add.reduce(abs(cs[:,0,:])**2, axis=1)
+n2 = np.add.reduce(abs(cs[:,1,:])**2, axis=1)
+plt.plot(ts[:n], n1, label="norm1")
+plt.plot(ts[:n], n2, label="norm2")
+plt.ylim(0.97,1.01)
+plt.legend()
+plt.savefig("fig/norm.pdf")
 plt.close()
 
 """

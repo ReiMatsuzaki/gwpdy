@@ -23,3 +23,4 @@ f90/utest
 **/fig
 a.out
 *.x
+*.dSYM

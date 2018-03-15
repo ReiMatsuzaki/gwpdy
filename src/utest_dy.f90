@@ -283,6 +283,35 @@ contains
     call DyBranch_delete(ierr)
     
   end subroutine test_branch_1f2e
+  subroutine test_branch_1f2e_branch
+    use Mod_DyBranch
+    use Mod_Tully1
+    integer it, iit, ierr
+    ! -- Initialize --
+    call DyBranch_new(1, 2, 1, ierr); CHK_ERR(ierr)
+    R_(1,1) = -0.1d0
+    P_(1,1) = +10.0d0
+    nt_ = 10
+    n1t_ = 1
+    call DyBranch_setup(ierr)
+
+    call branch(Tully1_calc_H_X, ierr); CHK_ERR(ierr)
+
+    ! -- Calculate --
+    do it = 1, nt_
+       do iit = 1, n1t_
+          !      call DyBranch_update(Tully1_calc_H_X, ierr)
+          call DyBranch_update(Tully1_calc_H_X, ierr); CHK_ERR(ierr)
+       end do
+    end do
+
+    EXPECT_NEAR_D(1.0d0, abs(cc_(1)), 1.0d-10, ierr)
+    EXPECT_NEAR_D(0.0d0, abs(cc_(2)), 1.0d-10, ierr)
+    
+    ! -- Finalize --
+    call DyBranch_delete(ierr)
+        
+  end subroutine test_branch_1f2e_branch
 end module Mod_UTestDy
 
 program main

@@ -20,7 +20,6 @@ module Mod_DyBranch
   double precision :: dt_
   integer :: nt_, n1t_              ! number of time for print, number for each step
   integer, parameter :: MAX_PATH=100
-  private :: dydt_  
 contains
   ! ==== IO ====
   subroutine write_input(ierr)
@@ -238,7 +237,7 @@ contains
     integer, intent(out) :: ierr
     double precision :: dotR(npath_,nf_), dotP(npath_,nf_)
     integer KK
-    complex(kind(0d0)) :: H(ne_,ne_), HH(npath_,npath_)
+    complex(kind(0d0)) :: HK(npath_,ne_,ne_), HH(npath_,npath_), SS(npath_,npath_)
     complex(kind(0d0)) :: HeIJ(npath_,ne_,ne_), XkIJ(npath_,nf_,ne_,ne_)
     complex(kind(0d0)) :: P2(nf_, npath_,npath_), S(npath_,npath_)
     type(Obj_GWP) :: gwp
@@ -259,14 +258,15 @@ contains
 
     ! -- propagate parameters --
     do KK = 1, npath_
-       call local_HIJ(HeIJ(KK,:,:), XkIJ(KK,:,:,:), P_(KK,:), H(:,:), ierr)
+       call local_HIJ(HeIJ(KK,:,:), XkIJ(KK,:,:,:), P_(KK,:), HK(KK,:,:), ierr)
        CHK_ERR(ierr)
-       call intet_diag(ne_, H(:,:), c_(KK,:), ierr); CHK_ERR(ierr)
+       call intet_diag(ne_, HK(KK,:,:), c_(KK,:), ierr); CHK_ERR(ierr)
     end do
 
-    call global_HIJ(HeIJ(:,:,:), XkIJ(:,:,:,:), s(:,:), p2(:,:,:), HH(:,:), ierr)
+    call global_HIJ(HeIJ(:,:,:), XkIJ(:,:,:,:), HK(:,:,:), s(:,:), p2(:,:,:), &
+         dotR(:,:), SS(:,:), HH(:,:), ierr)
     CHK_ERR(ierr)
-    call intet_diag(ne_, HH(:,:), cc_(:), ierr); CHK_ERR(ierr)
+    call intet_gdiag(npath_, SS(:,:), HH(:,:), cc_(:), ierr); CHK_ERR(ierr)
     
     R_(1:npath_,:) = R_(1:npath_,:) + dotR(:,:)*dydt_
     P_(1:npath_,:) = P_(1:npath_,:) + dotP(:,:)*dydt_
@@ -439,23 +439,29 @@ contains
     double precision, intent(in) :: P(:)
     complex(kind(0d0)), intent(out) :: res(:,:)
     integer,intent(out) ::  ierr
-    integer k
+    integer k, id(ne_, ne_), I
+
+    id(:,:) = 0
+    do I = 1, ne_
+       id(I,I) = 1
+    end do
     
     ierr = 0
     res(:,:) = HeIJ(:,:)
     do k = 1, nf_
-       res(:,:) = res(:,:) + 1/(2*m_)*P(k)**2
+       res(:,:) = res(:,:) + id(:,:)*1/(2*m_)*P(k)**2
        res(:,:) = res(:,:) - II * XkIJ(k,:,:)*P(k)/m_
        res(:,:) = res(:,:) - 1/(2*m_) * matmul(XkIJ(k,:,:), XkIJ(k,:,:))
     end do
     
   end subroutine LOCAL_HIJ
-  subroutine global_HIJ(HeIJ,XkIJ, S, P2, res, ierr)
+  subroutine global_HIJ(HeIJ,XkIJ,HK, S, P2, dotR, resS, resH, ierr)
     use Mod_const, only : II
-    complex(kind(0d0)), intent(in) :: HeIJ(:,:,:), XkIJ(:,:,:,:), S(:,:), P2(:,:,:)
-    complex(kind(0d0)), intent(out) :: res(:,:)
+    complex(kind(0d0)), intent(in) :: HeIJ(:,:,:), XkIJ(:,:,:,:), HK(:,:,:), S(:,:), P2(:,:,:)
+    double precision ,  intent(in) :: dotR(:,:)
+    complex(kind(0d0)), intent(out) :: resS(:,:), resH(:,:)
     integer, intent(out) :: ierr
-    complex(kind(0d0)) :: HH(npath_), XX(nf_,npath_)
+    complex(kind(0d0)) :: HH(npath_), XX(nf_,npath_), SS(npath_,npath_), TT(npath_,npath_)
     integer :: KK, LL, k
     complex(kind(0d0)) :: tmp
     ierr = 0
@@ -465,19 +471,34 @@ contains
        do k = 1, nf_
           XX(k,KK) = dot_product(c_(KK,:), matmul(XkIJ(KK,k,:,:), c_(KK,:)))
        end do
+       do LL = 1, npath_
+          resS(KK,LL) = S(KK,LL) * sum(conjg(c_(KK,:))*c_(LL,:))
+       end do
     end do
 
-    res(:,:) = 0
-    do KK = 1, npath_       
+    do KK = 1, npath_
        do LL = 1, npath_
+          tmp = dot_product(c_(KK,:), matmul(HK(LL,:,:), c_(LL,:)))
+          do k = 1, nf_
+             tmp = tmp + II*P_(LL,k)*S(KK,LL)*dotR(LL,k)
+          end do
+          TT(KK,LL) = tmp*S(KK,LL)
+       end do
+    end do
+
+    resH(:,:) = -II*TT(:,:)
+    do KK = 1, npath_       
+       do LL = 1, npath_          
           tmp = (HH(KK)+HH(LL))/2
           do k = 1, nf_
              tmp = tmp + p2(k,KK,LL)/(2*m_)
              tmp = tmp + (P_(KK,k)+P_(LL,k))/(2*m_)*(XX(k,KK)+XX(k,LL))/2 * s(KK,LL)
+             tmp = tmp - ii*P_(LL,k)/m_*SS(KK,LL)
           end do
-          res(KK,LL) = res(KK,LL) + tmp
+          resH(KK,LL) = resH(KK,LL) + tmp
        end do
     end do
+    
   end subroutine global_HIJ
   subroutine intet_diag(n, H, c, ierr)
     use Mod_const, only : II
@@ -496,5 +517,22 @@ contains
     c(:)   = matmul(U(:,:),        c(:))
     
   end subroutine intet_diag
+  subroutine intet_gdiag(n, S, H, c, ierr)
+    use Mod_const, only : II
+    use Mod_math, only  : lapack_zggev, vmv
+    integer, intent(in) :: n
+    complex(kind(0d0)), intent(in) :: S(n,n), H(n,n)
+    complex(kind(0d0)), intent(inout) :: c(n)
+    integer, intent(out) :: ierr
+    complex(kind(0d0)) :: w(n)
+    complex(kind(0d0)) :: UL(n,n), UR(n,n)
+
+    call lapack_zggev(n, S, H, w, UL, UR, ierr); CHK_ERR(ierr)
+    !    UH(:,:) = conjg(transpose(U(:,:)))
+    c(:) = matmul(transpose(UL), matmul(S,c))
+    c(:) = exp(-II*w(:)*dydt_) * c(:)
+    c(:) = matmul(UR(:,:),       c(:))
+    
+  end subroutine intet_gdiag
 end module Mod_DyBranch
 
