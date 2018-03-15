@@ -253,15 +253,15 @@ contains
 
     ! -- electron part --
     do KK = 1, npath_
-       call dot_RP(calc_H_X, KK, dotR(KK,:), dotP(KK,:), ierr);      CHK_ERR(ierr)
-       call calc_H_X(R_(KK,:), HeIJ(KK,:,:), XkIJ(KK,:,:,:), ierr);  CHK_ERR(ierr)
+       call dot_RP(calc_H_X, KK, dotR(KK,:), dotP(KK,:),     ierr); CHK_ERR(ierr)
+       call calc_H_X(R_(KK,:), HeIJ(KK,:,:), XkIJ(KK,:,:,:), ierr); CHK_ERR(ierr)
     end do
 
     ! -- propagate parameters --
     do KK = 1, npath_
        call local_HIJ(HeIJ(KK,:,:), XkIJ(KK,:,:,:), P_(KK,:), H(:,:), ierr)
        CHK_ERR(ierr)
-       call intet_diag(ne_, HH(:,:), c_(KK,:), ierr); CHK_ERR(ierr)
+       call intet_diag(ne_, H(:,:), c_(KK,:), ierr); CHK_ERR(ierr)
     end do
 
     call global_HIJ(HeIJ(:,:,:), XkIJ(:,:,:,:), s(:,:), p2(:,:,:), HH(:,:), ierr)
@@ -330,9 +330,16 @@ contains
     end do
     
   end subroutine inte_nuc_RK4
-  subroutine branch(H, ierr)
+  subroutine branch(calc_H_X, ierr)
     use Mod_math, only : lapack_zheev
-    complex(kind(0d0)), intent(in) :: H(:,:)
+    interface
+       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
+         double precision, intent(in) :: Q(:)
+         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
+         integer, intent(out) :: ierr
+       end subroutine calc_H_X
+    end interface
+    complex(kind(0d0)) :: HeIJ(ne_,ne_), XkIJ(nf_,ne_,ne_), H(ne_, ne_)
     integer, intent(out) :: ierr
     integer K
     double precision ::  w(ne_)
@@ -340,6 +347,8 @@ contains
     
     ierr = 0
     K = 1
+    call calc_H_X(R_(K,:), HeIJ(:,:), XkIJ(:,:,:), ierr); CHK_ERR(ierr)
+    call local_HIJ(HeIJ, XkIJ, P_(K,:), H(:,:), ierr); CHK_ERR(ierr)
     call lapack_zheev(ne_, H(:,:), w(:), U(:,:), ierr); CHK_ERR(ierr)
     
     npath_ = ne_
@@ -377,7 +386,7 @@ contains
           P_(KK,i) = P_(KK,i) -2*dP_
           call local_HIJ(HeIJ, XkIJ, P_(KK,:), H2(:,:), ierr); CHK_ERR(ierr)
           P_(KK,i) = P_(KK,i) + dP_
-          dH_dP(:,:) = (H1(:,:) - H2(:,:)) / (2*dR_)
+          dH_dP(:,:) = (H1(:,:) - H2(:,:)) / (2*dP_)
           dotR(i) = real(dot_product(c_(KK,:), matmul(dH_dP(:,:), c_(KK,:))))
        end do
        
@@ -395,7 +404,17 @@ contains
     else
        MSG_ERR("invalid nd_")
        ierr = 1
-    end if        
+    end if
+
+    if(.not. dotR(1).eq.dotR(1)) then
+       MSG_ERR("dotR is NaN")
+       ierr = 1; return
+    end if
+    if(.not. dotP(1).eq.dotP(1)) then
+       MSG_ERR("dotP is NaN")
+       ierr = 1; return
+    end if    
+    
   end subroutine dot_RP
   subroutine make_gwp(gwp, ierr)
     use Mod_GWP

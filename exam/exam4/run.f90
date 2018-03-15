@@ -5,7 +5,7 @@ subroutine run
   use Mod_MoleFit
   integer ierr
 
-  write(*,*) "exam3"
+  write(*,*) "exam4"
 
   call MoleFit_new_file("xs.csv", "heij.csv", "xkij.csv", ierr)
   
