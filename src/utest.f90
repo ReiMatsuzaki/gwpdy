@@ -57,8 +57,8 @@ contains
     if(abs(a-b) > eps) then
        write(0,'(A, ":", I0, ": ", A)') file, line, "a and b are not near"
        ierr = 1
-       write(0, *) a
-       write(0, *) b
+       write(0, '("a: ", E20.5, " ", E20.5)') real(a), aimag(a)
+       write(0, '("b: ", E20.5, " ", E20.5)') real(b), aimag(b)
        write(0, '("eps: ", E20.5)') eps
        return
     end if

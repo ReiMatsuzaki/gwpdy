@@ -104,8 +104,12 @@ contains
     call Timer_end(timer, "1f2e_fit", ierr)
 
     call Timer_begin(timer, "branch_1f2e", ierr)
-    call test_branch_1f2e
+    !    call test_branch_1f2e
     call Timer_end(timer, "branch_1f2e", ierr)
+
+    call Timer_begin(timer, "branch_1f2eH", ierr)
+    call test_branch_1f2e_H
+    call Timer_end(timer, "branch_1f2eH", ierr)    
     
     write(*,*)
     write(*,*) "UTestDy end"
@@ -283,27 +287,44 @@ contains
     call DyBranch_delete(ierr)
     
   end subroutine test_branch_1f2e
-  subroutine test_branch_1f2e_branch
+  subroutine test_branch_1f2e_H
     use Mod_DyBranch
+    use Mod_GWP
     use Mod_Tully1
-    integer it, iit, ierr
+    integer ierr
+    integer, parameter :: nf=1, ne=2, np=2
+    complex(kind(0d0)) :: HeIJ(np,ne,ne), XkIJ(np,nf,ne,ne), S(np,np), P2(nf,np,np)
+    double precision :: dotR(np,nf), dotP(np,nf)
+    complex(kind(0d0)) :: HH(np,np), HK(np,ne,ne), SS(np,np)
+    type(Obj_GWP) :: gwp
+    integer KK
+    
     ! -- Initialize --
-    call DyBranch_new(1, 2, 1, ierr); CHK_ERR(ierr)
-    R_(1,1) = -0.1d0
-    P_(1,1) = +10.0d0
-    nt_ = 10
-    n1t_ = 1
+    call DyBranch_new(nf, ne, np, ierr); CHK_ERR(ierr)
+    R_(1,1) = +0.8d0
+    P_(1,1) = +5.0d0
+    R_(2,1) = -0.7d0
+    P_(2,1) = +10.0d0
     call DyBranch_setup(ierr)
 
-    call branch(Tully1_calc_H_X, ierr); CHK_ERR(ierr)
+    ! -- nuclear part --
+    call make_GWP(gwp, ierr)
+    call gwp_overlap(gwp, S, ierr)
+    call gwp_p2(gwp, P2, ierr)
+    call GWP_delete(gwp, ierr)
 
-    ! -- Calculate --
-    do it = 1, nt_
-       do iit = 1, n1t_
-          !      call DyBranch_update(Tully1_calc_H_X, ierr)
-          call DyBranch_update(Tully1_calc_H_X, ierr); CHK_ERR(ierr)
-       end do
+    ! -- electron part --
+    do KK = 1, npath_
+       call dot_RP(Tully1_calc_H_X, KK, dotR(KK,:), dotP(KK,:), ierr)
+       call Tully1_calc_H_X(R_(KK,:), HeIJ(KK,:,:), XkIJ(KK,:,:,:), ierr)
+       call local_HIJ(HeIJ(KK,:,:), XkIJ(KK,:,:,:), P_(KK,:), HK(KK,:,:), ierr)
     end do
+
+    ! -- global Hamiltonian --
+    call global_HIJ(HeIJ(:,:,:), XkIJ(:,:,:,:), HK(:,:,:), s(:,:), p2(:,:,:), &
+         dotR(:,:), SS(:,:), HH(:,:), ierr)
+
+    EXPECT_EQ_C(HH(1,2), conjg(HH(2,1)), ierr)
 
     EXPECT_NEAR_D(1.0d0, abs(cc_(1)), 1.0d-10, ierr)
     EXPECT_NEAR_D(0.0d0, abs(cc_(2)), 1.0d-10, ierr)
@@ -311,7 +332,7 @@ contains
     ! -- Finalize --
     call DyBranch_delete(ierr)
         
-  end subroutine test_branch_1f2e_branch
+  end subroutine test_branch_1f2e_H
 end module Mod_UTestDy
 
 program main
