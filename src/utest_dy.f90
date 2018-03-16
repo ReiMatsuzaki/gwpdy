@@ -291,20 +291,25 @@ contains
     use Mod_DyBranch
     use Mod_GWP
     use Mod_Tully1
+    use Mod_Math, only : vmv
     integer ierr
     integer, parameter :: nf=1, ne=2, np=2
     complex(kind(0d0)) :: HeIJ(np,ne,ne), XkIJ(np,nf,ne,ne), S(np,np), P2(nf,np,np)
     double precision :: dotR(np,nf), dotP(np,nf)
-    complex(kind(0d0)) :: HH(np,np), HK(np,ne,ne), SS(np,np)
+    complex(kind(0d0)) :: HH(np,np), HK(np,ne,ne), SS(np,np), TT(np,np)
     type(Obj_GWP) :: gwp
     integer KK
     
     ! -- Initialize --
     call DyBranch_new(nf, ne, np, ierr); CHK_ERR(ierr)
-    R_(1,1) = +0.8d0
-    P_(1,1) = +5.0d0
-    R_(2,1) = -0.7d0
-    P_(2,1) = +10.0d0
+    R_(1,1) = +0.3d0;
+    P_(1,1) = +1.0d0
+    c_(1,:) = (/(1.0d0,0.0d0), (0.0d0,0.0d0)/)
+    R_(2,1) = +0.2d0;
+    P_(2,1) = -1.2d0
+    c_(2,:) = (/(0.2d0,0.0d0), (1.0d0,0.0d0)/)
+    dt_ = 3.0d0
+    m_  = 2000.0d0
     call DyBranch_setup(ierr)
 
     ! -- nuclear part --
@@ -322,12 +327,17 @@ contains
 
     ! -- global Hamiltonian --
     call global_HIJ(HeIJ(:,:,:), XkIJ(:,:,:,:), HK(:,:,:), s(:,:), p2(:,:,:), &
-         dotR(:,:), SS(:,:), HH(:,:), ierr)
+         dotR(:,:), SS(:,:), TT(:,:), HH(:,:), ierr)
 
+    ! -- check Hamiltonian --
     EXPECT_EQ_C(HH(1,2), conjg(HH(2,1)), ierr)
+    EXPECT_EQ_D(0.0d0, aimag(HH(2,2)), ierr)
+    EXPECT_EQ_D(0.0d0, aimag(HH(1,1)), ierr)
 
-    EXPECT_NEAR_D(1.0d0, abs(cc_(1)), 1.0d-10, ierr)
-    EXPECT_NEAR_D(0.0d0, abs(cc_(2)), 1.0d-10, ierr)
+    ! -- update --
+    !    write(*,*) CC_(:np)
+    call Update1st(Tully1_calc_H_X, ierr); CHK_ERR(ierr)
+    EXPECT_NEAR_C((1.0d0, 0.0d0), dot_product(CC_(:np), matmul(SS(:,:), CC_(:np))), 1.0d-6, ierr)
     
     ! -- Finalize --
     call DyBranch_delete(ierr)

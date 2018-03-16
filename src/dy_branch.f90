@@ -237,7 +237,7 @@ contains
     integer, intent(out) :: ierr
     double precision :: dotR(npath_,nf_), dotP(npath_,nf_)
     integer KK
-    complex(kind(0d0)) :: HK(npath_,ne_,ne_), HH(npath_,npath_), SS(npath_,npath_)
+    complex(kind(0d0)) :: HK(npath_,ne_,ne_), HH(npath_,npath_), SS(npath_,npath_), TT(npath_,npath_)
     complex(kind(0d0)) :: HeIJ(npath_,ne_,ne_), XkIJ(npath_,nf_,ne_,ne_)
     complex(kind(0d0)) :: P2(nf_, npath_,npath_), S(npath_,npath_)
     type(Obj_GWP) :: gwp
@@ -264,8 +264,9 @@ contains
     end do
 
     call global_HIJ(HeIJ(:,:,:), XkIJ(:,:,:,:), HK(:,:,:), s(:,:), p2(:,:,:), &
-         dotR(:,:), SS(:,:), HH(:,:), ierr)
+         dotR(:,:), SS(:,:), TT(:,:), HH(:,:), ierr)
     CHK_ERR(ierr)
+    HH(:,:) = HH(:,:) - II*TT(:,:)
     call intet_gdiag(npath_, SS(:,:), HH(:,:), cc_(:), ierr); CHK_ERR(ierr)
     
     R_(1:npath_,:) = R_(1:npath_,:) + dotR(:,:)*dydt_
@@ -455,47 +456,42 @@ contains
     end do
     
   end subroutine LOCAL_HIJ
-  subroutine global_HIJ(HeIJ,XkIJ,HK, S, P2, dotR, resS, resH, ierr)
+  subroutine global_HIJ(HeIJ,XkIJ,HK, S, P2, dotR, resS, resT, resH, ierr)
     use Mod_const, only : II
     complex(kind(0d0)), intent(in) :: HeIJ(:,:,:), XkIJ(:,:,:,:), HK(:,:,:), S(:,:), P2(:,:,:)
     double precision ,  intent(in) :: dotR(:,:)
-    complex(kind(0d0)), intent(out) :: resS(:,:), resH(:,:)
+    complex(kind(0d0)), intent(out) :: resS(:,:), resT(npath_,npath_), resH(:,:)
     integer, intent(out) :: ierr
-    complex(kind(0d0)) :: HH(npath_), XX(nf_,npath_), SS(npath_,npath_), TT(npath_,npath_)
-    integer :: KK, LL, k
-    complex(kind(0d0)) :: tmp
+    complex(kind(0d0)) :: M(ne_,ne_)
+    integer :: KK, LL, k, I,J
+    complex(kind(0d0)) :: tmp, dr, x
     ierr = 0
-    
+
     do KK = 1, npath_
-       HH(KK) = dot_product(c_(KK,:), matmul(HeIJ(KK,:,:), c_(KK,:)))
-       do k = 1, nf_
-          XX(k,KK) = dot_product(c_(KK,:), matmul(XkIJ(KK,k,:,:), c_(KK,:)))
+       do LL = 1, npath_
+          tmp = -II*dot_product(c_(KK,:), matmul(HK(LL,:,:), c_(LL,:)))
+          do k = 1, nf_
+             tmp = tmp - II*P_(LL,k)*dotR(LL,k)
+          end do
+          resT(KK,LL) = tmp*S(KK,LL)
        end do
+    end do
+    
+    do KK = 1, npath_       
        do LL = 1, npath_
           resS(KK,LL) = S(KK,LL) * sum(conjg(c_(KK,:))*c_(LL,:))
-       end do
-    end do
-
-    do KK = 1, npath_
-       do LL = 1, npath_
-          tmp = dot_product(c_(KK,:), matmul(HK(LL,:,:), c_(LL,:)))
+          M(:,:) = (HeIJ(KK,:,:)+HeIJ(LL,:,:))/2 * S(KK,LL)
           do k = 1, nf_
-             tmp = tmp + II*P_(LL,k)*S(KK,LL)*dotR(LL,k)
+             do I = 1, ne_
+                M(I,I) = M(I,I) + P2(k,KK,LL) / (2*m_)
+                do J = 1, ne_
+                   dr = (P_(KK,k)+P_(LL,k))/(2*m_)
+                   x  = (XkIJ(KK,k,I,J)+XkIJ(LL,k,I,J))/2
+                   M(I,J) = M(I,J) - II*dr*x*2 * S(KK,LL)
+                end do
+             end do
           end do
-          TT(KK,LL) = tmp*S(KK,LL)
-       end do
-    end do
-
-    resH(:,:) = -II*TT(:,:)
-    do KK = 1, npath_       
-       do LL = 1, npath_          
-          tmp = (HH(KK)+HH(LL))/2
-          do k = 1, nf_
-             tmp = tmp + p2(k,KK,LL)/(2*m_)
-             tmp = tmp + (P_(KK,k)+P_(LL,k))/(2*m_)*(XX(k,KK)+XX(k,LL))/2 * s(KK,LL)
-             tmp = tmp - ii*P_(LL,k)/m_*SS(KK,LL)
-          end do
-          resH(KK,LL) = resH(KK,LL) + tmp
+          resH(KK,LL) = dot_product(c_(KK,:), matmul(M(:,:), c_(LL,:)))
        end do
     end do
     
@@ -527,8 +523,7 @@ contains
     complex(kind(0d0)) :: w(n)
     complex(kind(0d0)) :: UL(n,n), UR(n,n)
 
-    call lapack_zggev(n, S, H, w, UL, UR, ierr); CHK_ERR(ierr)
-    !    UH(:,:) = conjg(transpose(U(:,:)))
+    call lapack_zggev(n, H, S, w, UL, UR, ierr); CHK_ERR(ierr)
     c(:) = matmul(transpose(UL), matmul(S,c))
     c(:) = exp(-II*w(:)*dydt_) * c(:)
     c(:) = matmul(UR(:,:),       c(:))
