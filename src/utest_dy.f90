@@ -303,8 +303,8 @@ contains
     call DyBranch_new(nf, ne, np, ierr); CHK_ERR(ierr)
     R_(1,1) = +0.8d0
     P_(1,1) = +5.0d0
-    R_(2,1) = -0.7d0
-    P_(2,1) = +10.0d0
+    R_(2,1) = +0.8d0
+    P_(2,1) = +5.0d0
     call DyBranch_setup(ierr)
 
     ! -- nuclear part --
