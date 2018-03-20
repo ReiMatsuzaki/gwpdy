@@ -17,6 +17,7 @@ ${BUILD}/utest_strutil.x: $(call mod2obj, ${MODS0} utest utest_strutil)
 ${BUILD}/utest_spline.x: $(call mod2obj, ${MODS0} spline utest utest_spline)
 ${BUILD}/utest_gwp.x: $(call mod2obj, ${MODS0} gwp utest utest_gwp)
 ${BUILD}/utest_dy.x: $(call mod2obj, ${MODS0} spline mole_fit gwp dy_mono dy_branch utest utest_dy)
+${BUILD}/utest_pwgto.x: $(call mod2obj, ${MODS0} pwgto utest utest_pwgto)
 
 check: check_strutil check_spline check_gwp check_dy
 

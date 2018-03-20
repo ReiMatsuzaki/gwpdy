@@ -120,4 +120,43 @@ contains
     w(:) = w(:) + h0
     
   end subroutine lapack_zggev_shift
+  subroutine gtoint(maxn, z, res, ierr)    
+    ! gives the integration :  { x^{n}exp[-zx^2] | n=0,...,maxn}
+    use Mod_const, only : pi
+    integer, intent(in) :: maxn
+    complex(kind(0d0)), intent(in) :: z
+    complex(kind(0d0)), intent(out) :: res(0:)
+    integer, intent(out) ::  ierr
+    integer n
+
+    ierr = 0
+    if(maxn < 0) then
+       MSG_ERR("maxn must be 0 or positive")
+       ierr = 1
+       return 
+    end if
+
+    if(size(res)<maxn+1) then
+       MSG_ERR("invalid size")
+       ierr = 1
+       write(0,*) "size(res):", size(res)
+       write(0,*) "maxn:", maxn
+       return
+    end if
+
+    res(0) = sqrt(pi/z)
+    if(maxn .eq. 0) then
+       return
+    end if
+
+    res(1) = 0.0d0
+    if(maxn .eq. 1) then
+       return
+    end if
+
+    do n = 2, maxn
+       res(n) = (n-1)/(2*z) * res(n-2)
+    end do
+    
+  end subroutine gtoint
 end module Mod_math
