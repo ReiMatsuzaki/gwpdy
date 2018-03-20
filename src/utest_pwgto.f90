@@ -48,14 +48,15 @@ contains
     use Mod_PWGTO
     type(Obj_PWGTO) :: gwp
     integer, parameter :: num = 3
+    integer, parameter :: numNCs = 1
     integer, parameter :: maxnd = 3
     integer ierr
-    call PWGTO_new(gwp, num, maxnd, ierr); CHK_ERR(ierr)
+    call PWGTO_new(gwp, num, numNCs, maxnd, ierr); CHK_ERR(ierr)
     call PWGTO_setup(gwp, ierr);         CHK_ERR(ierr)
     call PWGTO_delete(gwp, ierr);        CHK_ERR(ierr)
   end subroutine test_run
   subroutine test_coef_d
-    use Mod_PWGTO, only : calc_coef_d, hermite_coef, calc_hermite_1drm, hermite_1drm
+    use Mod_PWGTO
     integer, parameter :: maxnA = 1
     integer, parameter :: maxnB = 0
     integer, parameter :: maxm = 3
@@ -68,11 +69,11 @@ contains
     complex(kind(0d0)) :: ref
     integer nA, nB, Nk, m, ierr
 
-    call hermite_coef(zP, wP, RA, RB, maxnA, maxnB, d)
+    call hermite_coef_d(zP, wP, RA, RB, maxnA, maxnB, d)
     do nA = 0, maxnA
        do nB = 0, maxnB
           do Nk = 0, maxnA+maxnB
-             call calc_coef_d(zP, wP, RA, RB, nA, nB, Nk, ref)
+             call hermite_coef_d_0(zP, wP, RA, RB, nA, nB, Nk, ref)
              EXPECT_EQ_C(ref, d(nA, nB, Nk), ierr)
           end do
        end do
@@ -81,7 +82,7 @@ contains
     call hermite_1drm(zP, wP, maxm, h)
     do m = 0, maxm
        do Nk = 0, maxnA+maxnB
-          call calc_hermite_1drm(zP, wP, m, Nk, ref, ierr)
+          call hermite_1drm_0(zP, wP, m, Nk, ref, ierr)
           EXPECT_EQ_C(ref, h(m, Nk), ierr)
        end do
     end do
@@ -123,14 +124,15 @@ contains
     integer A, B
     integer ierr
     
-    call PWGTO_new(g, n, 4, ierr); CHK_ERR(ierr)
+    call PWGTO_new(g, n, 1, 4, ierr); CHK_ERR(ierr)
     g%ns(1)=2; g%zs(1)=1.2d0;  g%Ps(1) = 10.0d0
     g%ns(2)=3; g%zs(2)=(0.9d0, -0.8d0); 
     g%ns(3)=4; g%zs(3)=1.0d0; g%Rs(3) = 0.1d0;
     g%ns(4)=2; g%zs(4)=1.1d0; g%Rs(4) = 0.1d0;
+    g%ncs(1)%typ = "0"
     call PWGTO_setup(g, ierr); CHK_ERR(ierr)
     
-    call PWGTO_overlap(g, '0', '0', S, ierr); CHK_ERR(ierr)    
+    call PWGTO_overlap(g, 1, 1, S, ierr); CHK_ERR(ierr)    
 
     A = 1
     
@@ -174,7 +176,7 @@ contains
     integer A, m, ierr
     complex(kind(0d0)) :: gg(0:20)
     
-    call PWGTO_new(g, n, 4, ierr)
+    call PWGTO_new(g, n, 1, 4, ierr)
     g%ns(1)=0; g%zs(1)=1.1d0
     g%ns(2)=0; g%zs(2)=1.1d0; g%Rs(2) = 0.1d0
     g%ns(3)=2; g%zs(3)=1.1d0
@@ -184,7 +186,7 @@ contains
     A = 1
     call gtoint(10, g%zs(A)*2, gg(:), ierr); CHK_ERR(ierr)
     do m = 0, 2
-       call PWGTO_multipole(g, '0',  m, '0', MM, ierr)
+       call PWGTO_multipole(g, 1,  m, 1, MM, ierr)
        calc = MM(A, A) / (abs(PWGTO_nterm(g,A))**2)
        !ref = gtoint(g%ns(A)*2 + m, g%zs(A)*2)
        ref = gg(g%ns(A)*2+m)
@@ -194,7 +196,7 @@ contains
     A = 2
     m = 1
     call gtoint(20, g%zs(A)*2, gg(:), ierr); CHK_ERR(ierr)
-    call PWGTO_multipole(g, '0', m, '0', MM, ierr)
+    call PWGTO_multipole(g, 1, m, 1, MM, ierr)
     !calc = MM(A,A) / (abs(g%nc0%cs(A,1))**2)
     calc = MM(A,A) / (abs(PWGTO_nterm(g,A))**2)
     ref = g%Rs(A) * gg(g%ns(A)*2)
@@ -202,7 +204,7 @@ contains
 
     A = 4
     call gtoint(20, g%zs(A)*2, gg(:), ierr); CHK_ERR(ierr)
-    call PWGTO_multipole(g, '0', 10, '0', MM, ierr)
+    call PWGTO_multipole(g, 1, 10, 1, MM, ierr)
     ! calc = MM(A,A) / (abs(g%nc0%cs(A,1))**2)
     calc = MM(A,A) / (abs(PWGTO_nterm(g,A))**2)
     ! ref = gtoint(14, g%zs(A)*2)
@@ -218,14 +220,14 @@ contains
     complex(kind(0d0)) :: S(n, n), R2(n, n), R0(n, n)
     integer A, B, ierr
 
-    call PWGTO_new(g, n, 2, ierr)
+    call PWGTO_new(g, n, 1, 2, ierr)
     g%ns(1)=1; g%zs(1)=0.4d0; g%Rs(1) = 0.1d0
     g%ns(2)=2; g%zs(2)=0.5d0; g%Rs(2) = 0.1d0
     call PWGTO_setup(g, ierr)
 
-    call PWGTO_overlap(g, '0', '0', S, ierr)
-    call PWGTO_multipole(g, '0', 0, '0', R0, ierr)
-    call PWGTO_multipole(g, '0', 2, '0', R2, ierr)
+    call PWGTO_overlap(g,   1,    1, S, ierr)
+    call PWGTO_multipole(g, 1, 0, 1, R0, ierr)
+    call PWGTO_multipole(g, 1, 2, 1, R2, ierr)
 
     A = 1
     B = 1
@@ -268,14 +270,14 @@ contains
     pA = 0.1d0
     pB = 0.2d0
 
-    call PWGTO_new(g, n, 2, ierr); CHK_ERR(ierr)
+    call PWGTO_new(g, n, 1, 2, ierr); CHK_ERR(ierr)
     g % ns(1) = 0; g % zs(1) = z; g % Rs(1) = 0.1d0
     g % ns(2) = 1; g % zs(2) = z; g % Rs(2) = 0.1d0
     g % ns(3) = 0; g % zs(3) = z; g % Ps(3) = pA;    g % Rs(3) = 0.2d0
     g % ns(4) = 1; g % zs(4) = z; g % Ps(4) = pB;    g % Rs(4) = 0.2d0
     call PWGTO_setup(g, ierr); CHK_ERR(ierr)
 
-    call PWGTO_kineticP2(g, '0', '0', T, ierr); CHK_ERR(ierr)
+    call PWGTO_kineticP2(g, 1, 1, T, ierr); CHK_ERR(ierr)
     T = T/2
 
     call gtoint(4, zz, gg, ierr); CHK_ERR(ierr)
