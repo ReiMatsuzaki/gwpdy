@@ -16,7 +16,7 @@ module Mod_PWGTO
      complex(kind(0d0)), allocatable :: zs(:) 
      double precision,   allocatable :: Rs(:), Ps(:), gs(:)
      ! - intermediate -
-     type(Obj_ICs) :: nc0, ncR, ncP
+     type(Obj_ICs), allocatable :: ncs(:)
      complex(kind(0d0)), allocatable :: zP(:,:), RP(:,:), eP(:,:)
      complex(kind(0d0)), allocatable :: d(:,:,:,:,:)
   end type Obj_PWGTO
@@ -36,6 +36,7 @@ contains
     type(Obj_PWGTO) :: this
     integer, intent(in) :: num, maxnd
     integer, intent(out) :: ierr
+
     ierr = 0
     this%num   = num
     this%maxnd = maxnd
@@ -48,10 +49,11 @@ contains
     this%Rs = 0.0d0
     this%Ps = 0.0d0
     this%gs = 0.0d0
-    
-    call ICs_new(this%nc0, num, 1, ierr)
-    call ICs_new(this%ncR, num, 3, ierr)
-    call ICs_new(this%ncP, num, 1, ierr)
+
+    allocate(this%ncs(3))
+    call ICs_new(this%ncs(1), num, 1, ierr)
+    call ICs_new(this%ncs(2), num, 3, ierr)
+    call ICs_new(this%ncs(3), num, 1, ierr)
     
   end subroutine PWGTO_new
   subroutine PWGTO_setup(this, ierr)
@@ -73,27 +75,27 @@ contains
        call gtoint(2*nA, conjg(zA)+zA, gg, ierr); CHK_ERR(ierr)
        c0 = 1.0d0/sqrt(gg(2*nA))
 
-       this % nc0 % nlc(A) = 1
-       this % nc0 % cs(A, 1) = c0
-       this % nc0 % ns(A, 1) = this % ns(A)
+       this % ncs(1) % nlc(A) = 1
+       this % ncs(1) % cs(A, 1) = c0
+       this % ncs(1) % ns(A, 1) = this % ns(A)
 
        if(nA .eq. 0) then
-          this % ncR % nlc(A) = 2
+          this % ncs(2) % nlc(A) = 2
        else
-          this % ncR % nlc(A) = 3
+          this % ncs(2) % nlc(A) = 3
        end if
-       this % ncR % cs(A, 1) = c0*2*zA
-       this % ncR % ns(A, 1) = nA+1
-       this % ncR % cs(A, 2) = -c0*ii*this%Ps(A)
-       this % ncR % ns(A, 2) = nA
+       this % ncs(2) % cs(A, 1) = c0*2*zA
+       this % ncs(2) % ns(A, 1) = nA+1
+       this % ncs(2) % cs(A, 2) = -c0*ii*this%Ps(A)
+       this % ncs(2) % ns(A, 2) = nA
        if(nA .ne. 0) then
-          this % ncR % cs(A, 3) = nA*c0
-          this % ncR % ns(A, 3) = nA-1
+          this % ncs(2) % cs(A, 3) = nA*c0
+          this % ncs(2) % ns(A, 3) = nA-1
        end if
 
-       this % ncP % nlc(A) = 1
-       this % ncP % cs(A, 1) = c0*ii
-       this % ncP % ns(A, 1) = nA+1
+       this % ncs(3) % nlc(A) = 1
+       this % ncs(3) % cs(A, 1) = c0*ii
+       this % ncs(3) % ns(A, 1) = nA+1
     end do
 
     ! -- combination of GTO --
@@ -173,7 +175,7 @@ contains
     end do
     
   end subroutine multipole
-  subroutine kinetic(this, bra, ket, X, ierr)
+  subroutine kineticP2(this, bra, ket, X, ierr)
     ! d/dr x^n Exp[-zx^2 + iPx]
     !    = {nx^{n-1} +iPx^n -2zx^{n+1}} Exp[]
     ! <gA|T|gB> = nAnB <gA|x^{-2}|gB>
@@ -190,7 +192,7 @@ contains
     integer :: A, B, i, j, nA, nB
     double precision :: PA, PB 
     complex(kind(0d0)) acc, tmp, hint, cA, cB, zA, zB
-    
+    ierr = 0
     do A = 1, this % num
        do B = 1, this % num
           zA = conjg(this % zs(A))
@@ -223,17 +225,18 @@ contains
                 acc = acc + tmp * this%eP(A,B)*hint*cA*cB
              end do
           end do
-          X(A,B) = 0.5d0*acc
+          X(A,B) = acc
        end do
     end do
     
-  end subroutine kinetic
+  end subroutine kineticP2
   ! -- calc (public) --
   subroutine PWGTO_overlap(this, dbra, dket, X, ierr)
     type(Obj_PWGTO), intent(in) :: this
     character, intent(in) :: dbra, dket
     complex(kind(0d0)), intent(out) :: X(:,:)
     integer, intent(out) :: ierr
+    integer :: ibra, iket
 
     ierr = 0
     if(size(X,1) .ne. this%num .or. size(X,2) .ne. this%num) then
@@ -241,22 +244,11 @@ contains
        ierr = 1; return
     end if
 
-    if(dbra.eq.'0' .and. dket.eq.'0') then
-       call overlap(this, this%nc0, this%nc0, X, ierr); CHK_ERR(ierr)
-    else if(dbra.eq.'0' .and. dket.eq.'R') then
-       call overlap(this, this%nc0, this%ncR, X, ierr); CHK_ERR(ierr)
-    else if(dbra.eq.'0' .and. dket.eq.'P') then
-       call overlap(this, this%nc0, this%ncP, X, ierr); CHK_ERR(ierr)
-    else if(dbra.eq.'R' .and. dket.eq.'R') then
-       call overlap(this, this%ncR, this%ncR, X, ierr); CHK_ERR(ierr)
-    else if(dbra.eq.'R' .and. dket.eq.'P') then
-       call overlap(this, this%ncR, this%ncP, X, ierr); CHK_ERR(ierr)
-    else if(dbra.eq.'P' .and. dket.eq.'P') then
-       call overlap(this, this%ncP, this%ncP, X, ierr); CHK_ERR(ierr)
-    else
-       MSG_ERR("not implemented")
-       ierr = 1; return
-    end if
+    call get_iNC(dbra, ibra, ierr); CHK_ERR(ierr)
+    call get_iNC(dket, iket, ierr); CHK_ERR(ierr)
+    
+    call overlap(this, this%ncs(ibra), this%ncs(iket), X, ierr)
+        CHK_ERR(ierr)
     
   end subroutine PWGTO_overlap
   subroutine PWGTO_multipole(this, dbra, m, dket, X, ierr)
@@ -265,48 +257,61 @@ contains
     integer ,intent(in) :: m
     complex(kind(0d0)), intent(out) :: X(:,:)
     integer, intent(out) :: ierr
+    integer :: ibra, iket
     ierr = 0
     if(size(X,1) .ne. this%num .or. size(X,2) .ne. this%num) then
        MSG_ERR("invalid size of matrix")
        ierr = 1; return
     end if
 
-    if(dbra.eq.'0' .and. dket.eq.'0') then
-       call multipole(this, this%nc0, m, this%nc0, X, ierr); CHK_ERR(ierr)
-    else if(dbra.eq.'0' .and. dket.eq.'R') then
-       call multipole(this, this%nc0, m, this%ncR, X, ierr); CHK_ERR(ierr)
-    else if(dbra.eq.'0' .and. dket.eq.'P') then
-       call multipole(this, this%nc0, m, this%ncP, X, ierr); CHK_ERR(ierr)
-    else
-       MSG_ERR("not impl")
-       ierr = 1; return
-    end if
+    call get_iNC(dbra, ibra, ierr); CHK_ERR(ierr)
+    call get_iNC(dket, iket, ierr); CHK_ERR(ierr)
+
+    call multipole(this, this%ncs(ibra), m, this%ncs(iket), X, ierr)
+        CHK_ERR(ierr)
 
   end subroutine PWGTO_multipole
-  subroutine PWGTO_kinetic(this, dbra, dket, X, ierr)
+  subroutine PWGTO_kineticP2(this, dbra, dket, X, ierr)
     type(Obj_PWGTO) :: this
     character, intent(in) :: dbra, dket
     complex(kind(0d0)), intent(out) :: X(:,:)
     integer, intent(out) :: ierr
+    integer :: ibra, iket
 
     if(size(X,1) .ne. this%num .or. size(X,2) .ne. this%num) then
        MSG_ERR("invalid size of matrix")
        ierr = 1; return 
     end if
 
-    if(dbra.eq.'0' .and. dket.eq.'0') then
-       call kinetic(this, this%nc0, this%nc0, X, ierr); CHK_ERR(ierr)
-    else if(dbra.eq.'0' .and. dket.eq.'R') then
-       call kinetic(this, this%nc0, this%ncR, X, ierr); CHK_ERR(ierr)
-    else if(dbra.eq.'0' .and. dket.eq.'P') then
-       call kinetic(this, this%nc0, this%ncP, X, ierr); CHK_ERR(ierr)
+    call get_iNC(dbra, ibra, ierr); CHK_ERR(ierr)
+    call get_iNC(dket, iket, ierr); CHK_ERR(ierr)
+
+    call kineticP2(this, this%ncs(ibra), this%ncs(iket), X, ierr)
+    
+  end subroutine PWGTO_kineticP2
+  ! -- utils --
+  function PWGTO_nterm(this, A) result(res)
+    type(Obj_PWGTO) :: this
+    integer :: A
+    complex(kind(0d0)) :: res
+    res = this%ncs(1)%cs(A,1)
+  end function PWGTO_nterm
+  subroutine get_iNC(dchar, res, ierr)
+    character, intent(in) :: dchar
+    integer, intent(out) :: res, ierr
+    ierr = 0
+    if('0'.eq.dchar) then
+       res = 1
+    else if('R'.eq.dchar) then
+       res = 2
+    else if('P'.eq.dchar) then
+       res = 3
     else
        MSG_ERR("not impl")
-       ierr = 1; return
+       ierr = 1
+       return
     end if
-    
-  end subroutine PWGTO_kinetic
-  ! -- utils --
+  end subroutine get_iNC
   subroutine prod_gauss(zA, RA, PA, gA, zB, RB, PB, gB, zP, RP, eP)    
     ! compute gauss parameter of product conjg(GA).GB
     use Mod_const, only : II
