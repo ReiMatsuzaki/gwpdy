@@ -153,34 +153,34 @@ contains
     
   end subroutine test_1f1e
   subroutine test_1f2e_uncouple
-    use Mod_DyMono
+    !
+    ! see ~/calc/2018/3/19/gwpdy
+    !
+    use Mod_DyBranch
     use Mod_Uncoupled2e
-    integer it, iit, ierr
-    complex(kind(0d0)) H(2,2)
+    integer ierr
+    double precision :: probe(2), norm2
     ! -- Initialize --
-    call DyMono_new(1, 2, ierr); CHK_ERR(ierr)
-    R_(1) = 1
-    P_(1) = 0
+    call DyBranch_new(1, 2, 2, ierr); CHK_ERR(ierr)
+    R_(1,1) = -7; R_(2,1) = -7
+    P_(1,1) = +3; P_(2,1) = +3
     nt_ = 1
     n1t_ = 1
-    call DyMono_setup(ierr)
+    cc_(1) = 0.8d0; cc_(2) = 0.2d0
+    c_(1,1)= 1;     c_(2,1)= 3
+    c_(1,2)= 3;     c_(2,2)=2
+    inte_RP_ = "RK4"
+    call DyBranch_setup(ierr)
 
-    call HIJ(Uncoupled2e_H_X, H, ierr)
-    EXPECT_NEAR_C((0.0d0,0.0d0), H(1,2), 1.0d-10, ierr); CHK_ERR(ierr)
-    EXPECT_NEAR_C((0.0d0,0.0d0), H(2,1), 1.0d-10, ierr); CHK_ERR(ierr)
 
     ! -- Calculate --
-    do it = 1, nt_
-       do iit = 1, n1t_
-          call DyMono_update(Uncoupled2e_H_X, ierr)
-       end do
-    end do
-
-    EXPECT_NEAR_D(1.0d0, abs(c_(1)), 1.0d-10, ierr)
-    EXPECT_NEAR_D(0.0d0, abs(c_(2)), 1.0d-10, ierr)
+    call DyBranch_update(Uncoupled2e_H_X, ierr); CHK_ERR(ierr)
+    call calc_probe(probe(:), ierr); CHK_ERR(ierr)
+    norm2 = sum(probe)
+    EXPECT_NEAR_D(1.0d0, norm2, 1.d-10, ierr)
     
     ! -- Finalize --
-    call DyMono_delete(ierr)
+    call DyBranch_delete(ierr)
     
   end subroutine test_1f2e_uncouple
   subroutine test_1f2e_fit
@@ -291,20 +291,26 @@ contains
     use Mod_DyBranch
     use Mod_GWP
     use Mod_Tully1
+    use Mod_Math, only : vmv
     integer ierr
     integer, parameter :: nf=1, ne=2, np=2
     complex(kind(0d0)) :: HeIJ(np,ne,ne), XkIJ(np,nf,ne,ne), S(np,np), P2(nf,np,np)
     double precision :: dotR(np,nf), dotP(np,nf)
-    complex(kind(0d0)) :: HH(np,np), HK(np,ne,ne), SS(np,np)
+    complex(kind(0d0)) :: HH(np,np), HK(np,ne,ne), SS(np,np), TT(np,np)
     type(Obj_GWP) :: gwp
+    double precision :: norm2
     integer KK
     
     ! -- Initialize --
     call DyBranch_new(nf, ne, np, ierr); CHK_ERR(ierr)
-    R_(1,1) = +0.8d0
-    P_(1,1) = +5.0d0
-    R_(2,1) = +0.8d0
-    P_(2,1) = +5.0d0
+    R_(1,1) = +0.3d0;
+    P_(1,1) = +1.0d0
+    c_(1,:) = (/(1.0d0,0.0d0), (0.0d0,0.0d0)/)
+    R_(2,1) = +0.2d0;
+    P_(2,1) = -1.2d0
+    c_(2,:) = (/(0.2d0,0.0d0), (1.0d0,0.0d0)/)
+    dt_ = 1.0d0
+    m_  = 2000.0d0
     call DyBranch_setup(ierr)
 
     ! -- nuclear part --
@@ -322,12 +328,21 @@ contains
 
     ! -- global Hamiltonian --
     call global_HIJ(HeIJ(:,:,:), XkIJ(:,:,:,:), HK(:,:,:), s(:,:), p2(:,:,:), &
-         dotR(:,:), SS(:,:), HH(:,:), ierr)
+         dotR(:,:), SS(:,:), TT(:,:), HH(:,:), ierr)
 
+    ! -- check Hamiltonian --    
+    EXPECT_EQ_D(0.0d0, aimag(HH(2,2)), ierr)
+    EXPECT_EQ_D(0.0d0, aimag(HH(1,1)), ierr)
     EXPECT_EQ_C(HH(1,2), conjg(HH(2,1)), ierr)
 
-    EXPECT_NEAR_D(1.0d0, abs(cc_(1)), 1.0d-10, ierr)
-    EXPECT_NEAR_D(0.0d0, abs(cc_(2)), 1.0d-10, ierr)
+    EXPECT_EQ_D(0.0d0,   real(TT(1,1)),  ierr)
+    EXPECT_EQ_D(0.0d0,   real(TT(2,2)),  ierr)
+    EXPECT_EQ_C(TT(1,2), -conjg(TT(2,1)), ierr)
+
+    ! -- update --
+    call Update1st(Tully1_calc_H_X, ierr); CHK_ERR(ierr)
+    call calc_norm2(norm2, ierr); CHK_ERR(ierr)
+    EXPECT_EQ_D(1.0d0, norm2, ierr)
     
     ! -- Finalize --
     call DyBranch_delete(ierr)

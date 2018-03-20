@@ -64,6 +64,7 @@ contains
     integer it, k, KK, I
     character(50) fn
     integer ierr, ifile
+    double precision probe(ne_)
     ifile = 1242
 
     write(fn, '("out/", I0)') it
@@ -116,7 +117,17 @@ contains
        write(ifile,'(I0,",",F20.10,",",F20.10)') KK, real(cc_(KK)),  aimag(cc_(KK))
     end do
     close(ifile)
-    ifile = ifile + 1    
+    ifile = ifile + 1
+
+    call calc_probe(probe, ierr); CHK_ERR(ierr)
+    write(fn,'("out/", I0, "/", A)') it, "probe.csv"
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)
+    write(ifile,'("i,val")')
+    do I = 1, ne_
+       write(ifile,'(I0,",",F20.10)') I, probe(I)
+    end do
+    close(ifile)
+    ifile = ifile + 1
     
   end subroutine write_status
   subroutine print_status(it)
@@ -171,7 +182,7 @@ contains
   subroutine DyBranch_setup(ierr)
     integer, intent(out) :: ierr
     integer :: K
-    double precision :: norm2
+    double precision  :: norm2
     double precision, parameter :: tol = 1.0d-10
     ierr = 0
     do K = 1, npath_
@@ -184,6 +195,9 @@ contains
        end if
        c_(K,:) = c_(K,:) / sqrt(norm2)
     end do
+
+    call calc_norm2(norm2, ierr); CHK_ERR(ierr)
+    CC_(:) = CC_(:)/sqrt(norm2)
 
     if(inte_RP_.ne."euler" .and. inte_RP_.ne."RK4") then
        MSG_ERR("unsupported inte_RP_")
@@ -237,7 +251,7 @@ contains
     integer, intent(out) :: ierr
     double precision :: dotR(npath_,nf_), dotP(npath_,nf_)
     integer KK
-    complex(kind(0d0)) :: HK(npath_,ne_,ne_), HH(npath_,npath_), SS(npath_,npath_)
+    complex(kind(0d0)) :: HK(npath_,ne_,ne_), HH(npath_,npath_), SS(npath_,npath_), TT(npath_,npath_)
     complex(kind(0d0)) :: HeIJ(npath_,ne_,ne_), XkIJ(npath_,nf_,ne_,ne_)
     complex(kind(0d0)) :: P2(nf_, npath_,npath_), S(npath_,npath_)
     type(Obj_GWP) :: gwp
@@ -264,8 +278,31 @@ contains
     end do
 
     call global_HIJ(HeIJ(:,:,:), XkIJ(:,:,:,:), HK(:,:,:), s(:,:), p2(:,:,:), &
-         dotR(:,:), SS(:,:), HH(:,:), ierr)
+         dotR(:,:), SS(:,:), TT(:,:), HH(:,:), ierr)
     CHK_ERR(ierr)
+
+    !write(0,*)
+    !write(0,*) "HeIJ(1)"
+    !write(0,*) HeIJ(1,1,:)
+    !write(0,*) HeIJ(1,2,:)
+    !write(0,*) "XkIJ(1,1)"
+    !write(0,*) XkIJ(1,1,1,:)
+    !write(0,*) XkIJ(1,1,2,:)
+    !write(0,*) 
+    ! write(0,*) "HH"
+    ! write(0,*) HH(1,:)
+    ! write(0,*) HH(2,:)
+    ! write(0,*) 
+    ! write(0,*) "TT"
+    ! write(0,*) TT(1,:)
+    ! write(0,*) TT(2,:)
+
+    HH(:,:) = HH(:,:) - II*TT(:,:)
+    ! write(0,*) 
+    ! write(0,*) "H-iT"
+    ! write(0,*) HH(1,:)
+    ! write(0,*) HH(2,:)
+
     call intet_gdiag(npath_, SS(:,:), HH(:,:), cc_(:), ierr); CHK_ERR(ierr)
     
     R_(1:npath_,:) = R_(1:npath_,:) + dotR(:,:)*dydt_
@@ -455,47 +492,49 @@ contains
     end do
     
   end subroutine LOCAL_HIJ
-  subroutine global_HIJ(HeIJ,XkIJ,HK, S, P2, dotR, resS, resH, ierr)
+  subroutine global_HIJ(HeIJ,XkIJ,HK, S, P2, dotR, resS, resT, resH, ierr)
     use Mod_const, only : II
     complex(kind(0d0)), intent(in) :: HeIJ(:,:,:), XkIJ(:,:,:,:), HK(:,:,:), S(:,:), P2(:,:,:)
     double precision ,  intent(in) :: dotR(:,:)
-    complex(kind(0d0)), intent(out) :: resS(:,:), resH(:,:)
+    complex(kind(0d0)), intent(out) :: resS(:,:), resT(npath_,npath_), resH(:,:)
     integer, intent(out) :: ierr
-    complex(kind(0d0)) :: HH(npath_), XX(nf_,npath_), SS(npath_,npath_), TT(npath_,npath_)
     integer :: KK, LL, k
     complex(kind(0d0)) :: tmp
     ierr = 0
-    
+
+    ! -- global overlap --
     do KK = 1, npath_
-       HH(KK) = dot_product(c_(KK,:), matmul(HeIJ(KK,:,:), c_(KK,:)))
-       do k = 1, nf_
-          XX(k,KK) = dot_product(c_(KK,:), matmul(XkIJ(KK,k,:,:), c_(KK,:)))
-       end do
        do LL = 1, npath_
           resS(KK,LL) = S(KK,LL) * sum(conjg(c_(KK,:))*c_(LL,:))
        end do
     end do
 
-    do KK = 1, npath_
+    ! -- Hamiltonian --
+    do KK = 1, npath_       
        do LL = 1, npath_
-          tmp = dot_product(c_(KK,:), matmul(HK(LL,:,:), c_(LL,:)))
+          ! - electronic Hamiltonian --
+          tmp = S(KK,LL)* dot_product(c_(KK,:), matmul(HK(KK,:,:)+HK(LL,:,:), c_(LL,:)))/2
           do k = 1, nf_
-             tmp = tmp + II*P_(LL,k)*S(KK,LL)*dotR(LL,k)
+             ! - kinetic -
+             tmp = tmp + S(KK,LL)*P2(k,KK,LL)/(2*m_) * sum(conjg(c_(KK,:))*c_(LL,:))
+             ! - coupling -
+             tmp = tmp -II*S(KK,LL) * (P_(KK,k)+P_(LL,k))/(2*m_) * &
+                  dot_product(c_(KK,:), matmul(XkIJ(KK,k,:,:)+XkIJ(LL,k,:,:), c_(LL,:)))/2
           end do
-          TT(KK,LL) = tmp*S(KK,LL)
+          resH(KK,LL) = tmp
        end do
     end do
-
-    resH(:,:) = -II*TT(:,:)
-    do KK = 1, npath_       
-       do LL = 1, npath_          
-          tmp = (HH(KK)+HH(LL))/2
+    
+    ! -- time derivative --
+    ! <GK, dot{GL}> = dot{R} <GK,d(GL)/dR>
+    !               = dot{R} (-iP) <GK,GL>
+    do KK = 1, npath_
+       do LL = 1, npath_
+          tmp = -II * S(KK,LL) * dot_product(c_(KK,:), matmul(HeIJ(LL,:,:), c_(LL,:)))
           do k = 1, nf_
-             tmp = tmp + p2(k,KK,LL)/(2*m_)
-             tmp = tmp + (P_(KK,k)+P_(LL,k))/(2*m_)*(XX(k,KK)+XX(k,LL))/2 * s(KK,LL)
-             tmp = tmp - ii*P_(LL,k)/m_*SS(KK,LL)
+             tmp = tmp - II * S(KK,LL) * P_(LL,k)*dotR(LL,k) * sum(conjg(c_(KK,:))*c_(LL,:))
           end do
-          resH(KK,LL) = resH(KK,LL) + tmp
+          resT(KK,LL) = tmp
        end do
     end do
     
@@ -519,7 +558,7 @@ contains
   end subroutine intet_diag
   subroutine intet_gdiag(n, S, H, c, ierr)
     use Mod_const, only : II
-    use Mod_math, only  : lapack_zggev, vmv
+    use Mod_math, only  : lapack_zggev_shift, vmv
     integer, intent(in) :: n
     complex(kind(0d0)), intent(in) :: S(n,n), H(n,n)
     complex(kind(0d0)), intent(inout) :: c(n)
@@ -527,12 +566,42 @@ contains
     complex(kind(0d0)) :: w(n)
     complex(kind(0d0)) :: UL(n,n), UR(n,n)
 
-    call lapack_zggev(n, S, H, w, UL, UR, ierr); CHK_ERR(ierr)
-    !    UH(:,:) = conjg(transpose(U(:,:)))
+    call lapack_zggev_shift(n, H, S, H(1,1), w, UL, UR, ierr); CHK_ERR(ierr)
     c(:) = matmul(transpose(UL), matmul(S,c))
     c(:) = exp(-II*w(:)*dydt_) * c(:)
     c(:) = matmul(UR(:,:),       c(:))
     
   end subroutine intet_gdiag
+  subroutine calc_probe(res, ierr)
+    ! compute probability to find electronic state I
+    use Mod_GWP, only : Obj_GWP, GWP_overlap, GWP_delete
+    double precision, intent(out) :: res(:)
+    integer, intent(out) :: ierr
+    type(Obj_GWP) :: gwp
+    complex(kind(0d0)) :: cumsum, S(npath_, npath_)
+    integer K, L, I
+    call make_gwp(gwp, ierr); CHK_ERR(ierr)
+    call GWP_overlap(gwp, S, ierr); CHK_ERR(ierr)
+    ierr = 0
+    
+    do I = 1, ne_
+       cumsum = 0 
+       do K = 1, npath_
+          do L = 1, npath_
+             cumsum = cumsum + conjg(CC_(K))*S(K,L)*CC_(L) * conjg(c_(K,I))*c_(L,I)
+          end do
+       end do
+       res(I) = real(cumsum)
+    end do
+    call GWP_delete(gwp, ierr); CHK_ERR(ierr)
+  end subroutine calc_probe
+  subroutine calc_norm2(res, ierr)
+    double precision, intent(out) ::  res
+    integer, intent(out) :: ierr
+    double precision probe(ne_)
+    ierr = 0
+    call calc_probe(probe, ierr); CHK_ERR(ierr)    
+    res = sum(probe)
+  end subroutine calc_norm2
 end module Mod_DyBranch
 

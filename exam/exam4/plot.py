@@ -68,17 +68,15 @@ plt.close()
 cs = np.array(cs)
 ccs= np.array(ccs)
 plt.plot(ts[:n], abs(cs[:,0,0])**2, "r", label="1,1")
-plt.plot(ts[:n], abs(cs[:,0,1])**2, "b", label="1,2")
-plt.plot(ts[:n], abs(cs[:,1,0])**2, "r--", label="2,1")
-plt.plot(ts[:n], abs(cs[:,1,1])**2, "b--", label="2,2")
+plt.plot(ts[:n], abs(cs[:,0,1])**2, "r--", label="1,2")
+plt.plot(ts[:n], abs(cs[:,1,0])**2, "b", label="2,1")
+#plt.plot(ts[:n], abs(cs[:,1,1])**2, "b--", label="2,2")
+d = abs(cs[:,0,0].conjugate()*cs[:,1,0] + cs[:,0,1].conjugate()*cs[:,1,1])
+plt.plot(ts[:n], d, "k--", label="abs(cross)")
 plt.xlabel(r"$t$/fs", fontsize=15)
 plt.legend()
+plt.grid()
 plt.savefig("fig/probIJ.pdf")
-plt.close()
-
-n = len(prob1)
-plt.plot(ts[:n], prob1[:n])
-plt.savefig("fig/prob.pdf")
 plt.close()
 
 c1 = ccs[:,0]*cs[:,0,0] + ccs[:,1]*cs[:,1,0]
@@ -92,6 +90,17 @@ plt.ylim(0.97,1.01)
 plt.legend()
 plt.savefig("fig/norm.pdf")
 plt.close()
+
+n = len(ccs[:,0])
+pr1 = abs(ccs[:,0]*cs[:,0,0] + ccs[:,1]*cs[:,1,0])**2
+pr2 = abs(ccs[:,0]*cs[:,0,1] + ccs[:,1]*cs[:,1,1])**2
+plt.plot([1000,1000], [0, 1], "k--")
+plt.plot(ts[:n], pr1, label="1")
+plt.plot(ts[:n], pr2, label="2")
+plt.legend()
+plt.savefig("fig/prob.pdf")
+plt.close()
+
 
 """
 xs = csv2mat("xs.csv")

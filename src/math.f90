@@ -1,6 +1,7 @@
 #include "macros.fpp"
 
 module Mod_math
+  implicit none
 contains
   function vmv(a, S, b) result(res)
     complex(kind(0d0)), intent(in) :: a(:), S(:,:), b(:)
@@ -101,4 +102,22 @@ contains
     end do
 
   end subroutine lapack_zggev
+  subroutine lapack_zggev_shift(n, H, S, h0, w, UL, UR, ierr)
+    integer, intent(in) :: n
+    complex(kind(0d0)), intent(in) :: H(n, n), S(n, n)
+    complex(kind(0d0)), intent(in) :: h0
+    complex(kind(0d0)), intent(out) :: w(n)
+    complex(kind(0d0)), intent(out) :: UL(n,n), UR(n,n)
+    integer, intent(out) :: ierr
+    complex(kind(0d0)) :: HH(n,n)
+    integer I
+
+    HH=H
+    do I = 1, n
+       HH(I,I) = H(I,I) - h0
+    end do
+    call lapack_zggev(n, HH, S, w, UL, UR, ierr); CHK_ERR(ierr)
+    w(:) = w(:) + h0
+    
+  end subroutine lapack_zggev_shift
 end module Mod_math
