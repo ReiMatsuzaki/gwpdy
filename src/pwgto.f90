@@ -3,43 +3,27 @@ module Mod_PWGTO
   ! Plane Wave Gauss Type Orbital
   !   G^k_i(Q) = sum_j c_kji(Q-Ri)^{nkji} exp[-g(Q-Ri)^2 + iPi(Q-Ri)]
   implicit none
-  type Obj_NCs
-     ! represent sum_j cj x^{nj}
-     character(3) :: typ    ! 0: normal, dR: d.of R,  dP: d. of P
-     integer, allocatable :: nlc(:)  ! nlc(A)  : number of j for GA
-     integer, allocatable :: ns(:,:) ! ns(A,:) : {nj} for GA
-     complex(kind(0d0)), allocatable :: cs(:,:) ! cs(A,:) : {cj} for GA
-  end type Obj_NCs
   type Obj_PWGTO
-     ! - size -
+     ! - data size -
      integer :: num, maxnd
      ! - variable -
      integer, allocatable :: ns(:)
      complex(kind(0d0)), allocatable :: zs(:) 
      double precision,   allocatable :: Rs(:), Ps(:), gs(:)
+     character(3), allocatable :: typ(:)
      ! - intermediate -
-     type(Obj_NCs), allocatable :: ncs(:) ! ncs(1): non, ncs(2):dR, ncs(3):dP
+     integer, allocatable :: nlc(:,:)   ! nlc(n,A) number of nth polynomial
+     integer, allocatable :: nns(:,:,:) ! nns(n,A,:) powers of nth polynomial
+     complex(kind(0d0)), allocatable :: cs(:,:,:) ! cs(n,A,:) : coeff of nthpoly
      complex(kind(0d0)), allocatable :: zP(:,:), RP(:,:), eP(:,:)
      complex(kind(0d0)), allocatable :: d(:,:,:,:,:) ! d(A,B,0:maxnd,0:maxnd,0:maxnd*2)
   end type Obj_PWGTO
 contains
-  ! -- NCs --
-  subroutine NCs_new(this, num, numNC, ierr)
-    type(Obj_NCs) :: this
-    integer, intent(in) :: num, numNC
-    integer, intent(out) :: ierr
-    ierr = 0
-    this%typ = ""
-    allocate(this%nlc(num))
-    allocate(this%ns(num, numNC))
-    allocate(this%cs(num, numNC))
-  end subroutine NCs_new
   ! -- main --
   subroutine PWGTO_new(this, num, numNCs, maxnd, ierr)
     type(Obj_PWGTO) :: this
     integer, intent(in) :: num, numNCs, maxnd
     integer, intent(out) :: ierr
-    integer icn
 
     ierr = 0
     this%num   = num
@@ -54,11 +38,17 @@ contains
     this%Ps = 0.0d0
     this%gs = 0.0d0
 
-    allocate(this%ncs(numNCs))
-    do icn = 1, numNCs
-       call NCs_new(this%ncs(icn), num, 3, ierr); CHK_ERR(ierr)
-    end do
-    this%ncs(1) %typ = "0"
+    !allocate(this%ncs(numNCs))
+    !do icn = 1, numNCs
+    !   call NCs_new(this%ncs(icn), num, 3, ierr); CHK_ERR(ierr)
+    !end do
+    !this%ncs(1) %typ = "0"
+
+    allocate(this%typ(numNCs))
+    this%typ(1) = "0"
+    allocate(this%nlc(numNCs, num))
+    allocate(this%nns(numNCs, num, 3))
+    allocate(this%cs(numNCs, num, 3))
     
   end subroutine PWGTO_new
   subroutine PWGTO_setup(this, ierr)
@@ -80,30 +70,30 @@ contains
        call gtoint(2*nA, conjg(zA)+zA, gg, ierr); CHK_ERR(ierr)
        c0 = 1.0d0/sqrt(gg(2*nA))
 
-       do inc = 1, size(this%ncs)
-          select case(this%ncs(inc)%typ)
+       do inc = 1, size(this%typ)
+          select case(this%typ(inc))
           case("0")
-             this%ncs(inc)%nlc(A) = 1
-             this%ncs(inc)%cs(A, 1) = c0
-             this%ncs(inc)%ns(A, 1) = this % ns(A)
+             this%nlc(inc,A) = 1
+             this%cs(inc,A, 1) = c0
+             this%nns(inc,A, 1) = this % ns(A)
           case("dR")
              if(nA .eq. 0) then
-                this%ncs(inc)%nlc(A) = 2
+                this%nlc(inc,A) = 2
              else
-                this%ncs(inc)%nlc(A) = 3
+                this%nlc(inc,A) = 3
              end if
-             this%ncs(inc)%cs(A, 1) = c0*2*zA
-             this%ncs(inc)%ns(A, 1) = nA+1
-             this%ncs(inc)%cs(A, 2) = -c0*ii*this%Ps(A)
-             this%ncs(inc)%ns(A, 2) = nA
+             this%cs(inc,A, 1) = c0*2*zA
+             this%nns(inc,A, 1) = nA+1
+             this%cs(inc,A, 2) = -c0*ii*this%Ps(A)
+             this%nns(inc,A, 2) = nA
              if(nA .ne. 0) then
-                this%ncs(inc) % cs(A, 3) = nA*c0
-                this%ncs(inc) % ns(A, 3) = nA-1
+                this%cs(inc,A, 3) = nA*c0
+                this%nns(inc,A, 3) = nA-1
              end if
           case("dP")
-             this%ncs(inc)%nlc(A) = 1
-             this%ncs(inc)%cs(A, 1) = c0*ii
-             this%ncs(inc)%ns(A, 1) = nA+1
+             this%nlc(inc,A) = 1
+             this%cs(inc,A, 1) = c0*ii
+             this%nns(inc,A, 1) = nA+1
           case default
              MSG_ERR("unsupported typ")
              ierr = 1; return
@@ -131,127 +121,16 @@ contains
     integer, intent(out) :: ierr
     ierr = 0
     deallocate(this%zs, this%Rs, this%Ps, this%gs)
-    deallocate(this%ncs, this%zP, this%RP, this%eP, this%d)
+    deallocate(this%zP, this%RP, this%eP, this%d)
   end subroutine PWGTO_delete
-  ! -- calc (private) --
-  subroutine overlap(this, bra, ket, X, ierr)
-    type(Obj_PWGTO), intent(in) :: this
-    type(Obj_NCs), intent(in) ::   bra, ket
-    complex(kind(0d0)), intent(out) :: X(:,:)
-    integer, intent(out) :: ierr
-    integer :: A, B, i, j, nA, nB
-    complex(kind(0d0)) acc, tmp, hint
-
-    ierr = 0
-    do A = 1, this % num
-       do B = 1, this % num
-          call hermite_1dint(this%zP(A,B), hint)
-          acc = 0.0d0
-          do i = 1, bra%nlc(A)
-             do j = 1, ket % nlc(B)
-                nA = bra % ns(A, i)
-                nB = ket % ns(B, j)
-                tmp = this%eP(A,B) * this%d(A,B, nA,nB,0) * hint
-                acc = acc + conjg(bra%cs(A,i)) * ket%cs(B,j) * tmp
-             end do
-          end do
-          X(A,B) = acc
-       end do
-    end do
-    
-  end subroutine overlap
-  subroutine multipole(this, bra, m, ket, X, ierr)
-    type(Obj_PWGTO), intent(in) :: this
-    type(Obj_NCs), intent(in) ::   bra, ket
-    integer, intent(in) :: m
-    complex(kind(0d0)), intent(out) :: X(:,:)
-    integer, intent(out) :: ierr
-    integer :: A, B, i, j, nA, nB
-    complex(kind(0d0)) :: acc, tmp, hint(0:m, 0:m)
-    integer mm
-    ierr = 0
-    do A = 1, this % num
-       do B = 1, this % num
-          hint(:, :) = 0.0d0
-          call hermite_1drm(this%zP(A,B), this%RP(A,B), m ,hint)
-          acc = 0.0d0
-          do i = 1, bra%nlc(A)
-             do j = 1, ket % nlc(B)
-                nA = bra % ns(A, i)
-                nB = ket % ns(B, j)
-                mm = min(nA+nB, m)
-                tmp = dot_product(this%d(A,B, nA,nB,0:mm), hint(m,0:mm))
-                acc = acc + conjg(bra%cs(A,i)) * ket%cs(B,j) * tmp 
-             end do
-          end do
-          X(A,B) = this%eP(A,B) * acc
-       end do
-    end do
-    
-  end subroutine multipole
-  subroutine kineticP2(this, bra, ket, X, ierr)
-    ! d/dr x^n Exp[-zx^2 + iPx]
-    !    = {nx^{n-1} +iPx^n -2zx^{n+1}} Exp[]
-    ! <gA|T|gB> = nAnB <gA|x^{-2}|gB>
-    !            +(i.nA.PB - i.nB.PA) <x^{-1}>
-    !            +(-2(nA.zB+nB.zA) <1>
-    !            +i(-PA+PB)<1>
-    !            +i(-2PA.zB + 2PB.zA) <x>
-    !            +4.zA.zB <x^2>
-    use Mod_const, only : ii
-    type(Obj_PWGTO), intent(in) :: this
-    type(Obj_NCs), intent(in) :: bra, ket
-    complex(kind(0d0)), intent(out) :: X(:,:)
-    integer, intent(out) :: ierr
-    integer :: A, B, i, j, nA, nB
-    double precision :: PA, PB 
-    complex(kind(0d0)) acc, tmp, hint, cA, cB, zA, zB
-    ierr = 0
-    do A = 1, this % num
-       do B = 1, this % num
-          zA = conjg(this % zs(A))
-          zB = this % zs(B)
-          PA = this % Ps(A)
-          PB = this % Ps(B)          
-          call hermite_1dint(this%zP(A,B), hint)
-          acc = 0.0d0
-          do i = 1, bra % nlc(A)
-             do j = 1, ket % nlc(B)
-                cA = conjg(bra % cs(A, i))
-                cB = ket % cs(B, j)
-                nA = bra % ns(A, i)
-                nB = ket % ns(B, j)
-                tmp = 4*zA*zB * this%d(A,B, nA+1,nB+1,0) &
-                     -2*ii*zA*PB * this%d(A,B, nA+1,nB,0) &
-                     +2*ii*PA*zB * this%d(A,B, nA,nB+1,0) &
-                     +(PB*PA) * this%d(A,B, nA,nB,0)
-                if(nA.ne.0) then
-                   tmp = tmp +nA*(ii*PB) * this%d(A,B, nA-1,nB,0)
-                   tmp = tmp -2*nA*zB * this%d(A,B, nA-1,nB+1,0)
-                end if
-                if(nB.ne.0) then
-                   tmp = tmp +(-ii*PA)*nB * this%d(A,B, nA,nB-1,0)
-                   tmp = tmp -2*zA*nB * this%d(A,B, nA+1,nB-1,0)
-                end if
-                if(nB.ne.0.and.nA.ne.0) then
-                   tmp = tmp +(nA*nB) * this%d(A,B, nA-1,nB-1,0)
-                end if
-                acc = acc + tmp * this%eP(A,B)*hint*cA*cB
-             end do
-          end do
-          X(A,B) = acc
-       end do
-    end do
-    
-  end subroutine kineticP2
-  ! -- calc (public) --
+  ! -- calc  --
   subroutine PWGTO_overlap(this, ibra, iket, X, ierr)
     type(Obj_PWGTO), intent(in) :: this
     integer, intent(in) :: ibra, iket
     complex(kind(0d0)), intent(out) :: X(:,:)
     integer, intent(out) :: ierr
     integer :: A, B, i, j, nA, nB
-    complex(kind(0d0)) acc, tmp, hint
+    complex(kind(0d0)) acc, tmp, hint, cAcB
 
     ierr = 0
     call check_matrix(this, X, ierr); CHK_ERR(ierr)
@@ -260,12 +139,13 @@ contains
        do B = 1, this % num
           call hermite_1dint(this%zP(A,B), hint)
           acc = 0.0d0
-          do i = 1, this%ncs(ibra)%nlc(A)
-             do j = 1, this%ncs(iket)%nlc(B)
-                nA = this%ncs(ibra) % ns(A, i)
-                nB = this%ncs(iket) % ns(B, j)
-                tmp = this%eP(A,B) * this%d(A,B, nA,nB,0) * hint
-                acc = acc + conjg(this%ncs(ibra)%cs(A,I)) * this%ncs(iket)%cs(B,J) * tmp
+          do i = 1, this%nlc(ibra,A)
+             do j = 1, this%nlc(iket,B)
+                nA = this%nns(ibra,A, i)
+                nB = this%nns(iket,B, j)
+                cAcB = conjg(this%cs(ibra,A,i)) * this%cs(iket,B,j)
+                tmp = cAcB * this%eP(A,B) * this%d(A,B, nA,nB,0) * hint
+                acc = acc + tmp
              end do
           end do
           X(A,B) = acc
@@ -281,7 +161,7 @@ contains
     integer, intent(out) :: ierr
     
     integer :: A, B, i, j, nA, nB
-    complex(kind(0d0)) :: acc, tmp, hint(0:m, 0:m)
+    complex(kind(0d0)) :: acc, tmp, hint(0:m, 0:m), cAcB
     integer mm
     
     ierr = 0
@@ -292,13 +172,14 @@ contains
           hint(:, :) = 0.0d0
           call hermite_1drm(this%zP(A,B), this%RP(A,B), m ,hint)
           acc = 0.0d0
-          do i = 1, this%ncs(ibra)%nlc(A)
-             do j = 1, this%ncs(iket)%nlc(B)
-                nA = this%ncs(ibra)%ns(A,i) !bra % ns(A, i)
-                nB = this%ncs(iket)%ns(B,j)
+          do i = 1, this%nlc(ibra,A)
+             do j = 1, this%nlc(iket,B)
+                nA = this%nns(ibra,A, i)
+                nB = this%nns(iket,B, j)
+                cAcB = conjg(this%cs(ibra,A,i)) * this%cs(iket,B,j)
                 mm = min(nA+nB, m)
                 tmp = dot_product(this%d(A,B, nA,nB,0:mm), hint(m,0:mm))
-                acc = acc + conjg(this%ncs(ibra)%cs(A,i)) * this%ncs(iket)%cs(B,j) * tmp 
+                acc = acc + cAcB * tmp 
              end do
           end do
           X(A,B) = this%eP(A,B) * acc
@@ -314,7 +195,7 @@ contains
     integer, intent(out) :: ierr
     integer :: A, B, i, j, nA, nB
     double precision :: PA, PB 
-    complex(kind(0d0)) acc, tmp, hint, cA, cB, zA, zB
+    complex(kind(0d0)) acc, tmp, hint, cAcB, zA, zB
     
     ierr = 0
     call check_matrix(this, X, ierr); CHK_ERR(ierr)
@@ -326,12 +207,12 @@ contains
           PB = this % Ps(B)          
           call hermite_1dint(this%zP(A,B), hint)
           acc = 0.0d0
-          do i = 1, this%ncs(ibra)%nlc(A) 
-             do j = 1, this%ncs(iket)%nlc(B)
-                nA = this%ncs(ibra)%ns(A,i) 
-                nB = this%ncs(iket)%ns(B,j)
-                cA = conjg(this%ncs(ibra)%cs(A,i))
-                cB = this%ncs(iket)%cs(B,j)
+          do i = 1, this%nlc(ibra,A)
+             do j = 1, this%nlc(iket,B)
+                nA = this%nns(ibra,A, i)
+                nB = this%nns(iket,B, j)
+                cAcB = conjg(this%cs(ibra,A,i)) * this%cs(iket,B,j)
+
                 tmp = 4*zA*zB * this%d(A,B, nA+1,nB+1,0) &
                      -2*ii*zA*PB * this%d(A,B, nA+1,nB,0) &
                      +2*ii*PA*zB * this%d(A,B, nA,nB+1,0) &
@@ -347,7 +228,7 @@ contains
                 if(nB.ne.0.and.nA.ne.0) then
                    tmp = tmp +(nA*nB) * this%d(A,B, nA-1,nB-1,0)
                 end if
-                acc = acc + tmp * this%eP(A,B)*hint*cA*cB
+                acc = acc + cAcB * tmp * this%eP(A,B)*hint
              end do
           end do
           X(A,B) = acc
@@ -355,6 +236,18 @@ contains
     end do
     
   end subroutine PWGTO_kineticP2
+  function PWGTO_nterm(this, A) result(res)
+    ! gives normalization term
+    type(Obj_PWGTO) :: this
+    integer :: A
+    complex(kind(0d0)) :: res
+    if(this%typ(1).ne."0") then
+       MSG_ERR("invalid condition")
+       write(0,*) "stop program..."
+       stop
+    end if
+    res = this%cs(1,A,1)
+  end function PWGTO_nterm
   ! -- utils --
   subroutine check_matrix(this, M, ierr)
     type(Obj_PWGTO), intent(in) :: this
@@ -368,30 +261,6 @@ contains
     end if
     
   end subroutine check_matrix
-  function PWGTO_nterm(this, A) result(res)
-    ! gives normalization term
-    type(Obj_PWGTO) :: this
-    integer :: A
-    complex(kind(0d0)) :: res
-    res = this%ncs(1)%cs(A,1)
-  end function PWGTO_nterm
-  subroutine get_iNC(dchar, res, ierr)
-    ! get index Obj_PWGTO.ncs which represent dchar
-    character, intent(in) :: dchar
-    integer, intent(out) :: res, ierr
-    ierr = 0
-    if('0'.eq.dchar) then
-       res = 1
-    else if('R'.eq.dchar) then
-       res = 2
-    else if('P'.eq.dchar) then
-       res = 3
-    else
-       MSG_ERR("not impl")
-       ierr = 1
-       return
-    end if
-  end subroutine get_iNC
   subroutine prod_gauss(zA, RA, PA, gA, zB, RB, PB, gB, zP, RP, eP)    
     ! compute gauss parameter of product conjg(GA).GB
     use Mod_const, only : II

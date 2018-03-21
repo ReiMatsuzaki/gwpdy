@@ -129,38 +129,32 @@ contains
     g%ns(2)=3; g%zs(2)=(0.9d0, -0.8d0); 
     g%ns(3)=4; g%zs(3)=1.0d0; g%Rs(3) = 0.1d0;
     g%ns(4)=2; g%zs(4)=1.1d0; g%Rs(4) = 0.1d0;
-    g%ncs(1)%typ = "0"
     call PWGTO_setup(g, ierr); CHK_ERR(ierr)
     
     call PWGTO_overlap(g, 1, 1, S, ierr); CHK_ERR(ierr)    
 
     A = 1
     
-    calc = S(A, A) / (abs(g%ncs(1)%cs(A,1))**2)
-    !    ref = gtoint(g%ns(A)*2, g%zP(A,A))
+    calc = S(A, A) / (abs(PWGTO_nterm(g,A))**2)
     call gtoint(10, g%zp(A,A), gg(:), ierr); CHK_ERR(ierr)
     ref = gg(g%ns(A)*2)
     EXPECT_EQ_C(ref, calc, ierr)
 
     A = 2
-    calc = S(A, A) / (abs(g%ncs(1)%cs(A,1))**2)
-    !ref = gtoint(g%ns(A)*2, g%zP(A,A))
+    calc = S(A, A) / (abs(PWGTO_nterm(g,A))**2)
     call gtoint(10, g%zp(A,A), gg(:), ierr); CHK_ERR(ierr)
     ref = gg(g%ns(A)*2)
     EXPECT_EQ_C(ref, calc, ierr)
 
     A = 3
-    calc = S(A, A) / (abs(g%ncs(1)%cs(A,1))**2)
-    !    ref = gtoint(g%ns(A)*2, conjg(g%zs(A))+g%zs(A))
+    calc = S(A, A)  / (abs(PWGTO_nterm(g,A))**2)
     call gtoint(10, conjg(g%zs(A))+g%zs(A), gg(:), ierr); CHK_ERR(ierr)
     ref = gg(g%ns(A)*2)
     EXPECT_EQ_C(ref, calc, ierr)
 
     A = 3
     B = 4
-    !    calc = S(A, B) / (conjg(g%ncs%cs(A,1)) * g%ncs%cs(B,1))
     calc = S(A, B) / (conjg(PWGTO_nterm(g,A))*PWGTO_nterm(g,B))
-    ! ref = gtoint(g%ns(A)+g%ns(B), conjg(g%zs(A))+g%zs(B))
     call gtoint(10, conjg(g%zs(A))+g%zs(B), gg(:), ierr); CHK_ERR(ierr)
     ref = gg(g%ns(A)+g%ns(B))
     EXPECT_EQ_C(ref, calc, ierr)
@@ -188,7 +182,6 @@ contains
     do m = 0, 2
        call PWGTO_multipole(g, 1,  m, 1, MM, ierr)
        calc = MM(A, A) / (abs(PWGTO_nterm(g,A))**2)
-       !ref = gtoint(g%ns(A)*2 + m, g%zs(A)*2)
        ref = gg(g%ns(A)*2+m)
        EXPECT_EQ_C(ref, calc, ierr)
     end do
@@ -197,7 +190,6 @@ contains
     m = 1
     call gtoint(20, g%zs(A)*2, gg(:), ierr); CHK_ERR(ierr)
     call PWGTO_multipole(g, 1, m, 1, MM, ierr)
-    !calc = MM(A,A) / (abs(g%nc0%cs(A,1))**2)
     calc = MM(A,A) / (abs(PWGTO_nterm(g,A))**2)
     ref = g%Rs(A) * gg(g%ns(A)*2)
     EXPECT_EQ_C(ref, calc, ierr)
@@ -205,9 +197,7 @@ contains
     A = 4
     call gtoint(20, g%zs(A)*2, gg(:), ierr); CHK_ERR(ierr)
     call PWGTO_multipole(g, 1, 10, 1, MM, ierr)
-    ! calc = MM(A,A) / (abs(g%nc0%cs(A,1))**2)
     calc = MM(A,A) / (abs(PWGTO_nterm(g,A))**2)
-    ! ref = gtoint(14, g%zs(A)*2)
     ref = gg(14)
     EXPECT_NEAR_C(ref, calc, 1.0d-12, ierr)
     
@@ -281,13 +271,11 @@ contains
     T = T/2
 
     call gtoint(4, zz, gg, ierr); CHK_ERR(ierr)
-    !    ref = -0.5d0 * (-2*z*gtoint(0,zz) + 4*z*z*gtoint(2,zz))
     ref = -0.5d0 * (-2*z*gg(0) + 4*z*z*gg(2))
     calc = T(1, 1) / (abs(PWGTO_nterm(g, 1))**2)
     EXPECT_EQ_C(ref, calc, ierr)
 
     ref = 0.5d0 * (gg(0) +4*cz*z*gg(4) - 2*zz*gg(2))
-    !    calc = T(2, 2) / (abs(g%nc0%cs(2,1))**2)
     calc = T(2, 2) / (abs(PWGTO_nterm(g,2))**2)
     EXPECT_EQ_C(ref, calc, ierr)
 
@@ -295,12 +283,10 @@ contains
     EXPECT_EQ_C((0.0d0,0.0d0), T(2,1), ierr)
     
     ref = 0.5d0 * (4*z*cz*gg(2) + pA*pA*gg(0))
-    !    calc = T(3, 3) / (abs(g%nc0%cs(3,1))**2)
     calc = T(3, 3) / (abs(PWGTO_nterm(g,3))**2)
     EXPECT_EQ_C(ref, calc, ierr)
 
     ref = 0.5d0 * (gg(0) + 4*z*cz*gg(4) + (pB*pB-2*z-2*cz)*gg(2))
-    !    calc = T(4, 4) / (abs(g%nc0%cs(4,1))**2)
     calc = T(4, 4) / (abs(PWGTO_nterm(g,4))**2)
     EXPECT_EQ_C(ref, calc, ierr)
     
