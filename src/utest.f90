@@ -42,6 +42,7 @@ contains
        write(0, '("a:  ", E20.10)') a
        write(0, '("b:  ", E20.10)') b
        write(0, '("eps: ", E20.5)') eps
+       write(0, '("a-b:", E20.5)') a-b
        return
     end if
   end subroutine utest_near_d

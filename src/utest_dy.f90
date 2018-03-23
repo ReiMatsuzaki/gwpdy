@@ -109,7 +109,7 @@ contains
 
     call Timer_begin(timer, "branch_1f2eH", ierr)
     call test_branch_1f2e_H
-    call Timer_end(timer, "branch_1f2eH", ierr)    
+    call Timer_end(timer, "branch_1f2eH", ierr)
     
     write(*,*)
     write(*,*) "UTestDy end"
@@ -318,6 +318,8 @@ contains
     call gwp_overlap(gwp, S, ierr)
     call gwp_p2(gwp, P2, ierr)
     call GWP_delete(gwp, ierr)
+
+    write(*,*) S
 
     ! -- electron part --
     do KK = 1, npath_

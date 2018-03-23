@@ -120,8 +120,42 @@ contains
     w(:) = w(:) + h0
     
   end subroutine lapack_zggev_shift
+  subroutine lapack_zgesv(n, A, X, res, ierr)
+    integer, intent(in) :: n
+    complex(kind(0d0)), intent(in) :: A(:,:)    
+    complex(kind(0d0)), intent(in) :: X(:,:)
+    complex(kind(0d0)), intent(out) :: res(:,:)
+    integer, intent(out) :: ierr
+    integer info, ipiv(n)
+    complex(kind(0d0)) :: AA(n,n)
+    
+    ierr = 0
+    AA(:,:) = A(:,:)
+    res(:,:) = X(:,:)
+
+    call ZGESV(n, n, AA, n, ipiv, res, n, info)
+    
+  end subroutine lapack_zgesv
+  subroutine lapack_zgesv_1(n, A, x, res, ierr)
+    integer, intent(in) :: n
+    complex(kind(0d0)), intent(in) :: A(:,:)    
+    complex(kind(0d0)), intent(in) :: X(:)
+    complex(kind(0d0)), intent(out) :: res(:)
+    integer, intent(out) :: ierr
+    integer info, ipiv(n)
+    complex(kind(0d0)) :: AA(n,n)
+    complex(kind(0d0)) :: tmp(n,1)
+
+    ierr = 0
+    AA(:,:) = A(:,:)
+    tmp(:,1) = x(:)
+
+    call ZGESV(n, 1, AA, n, ipiv, tmp, n, info)
+    res(:) = tmp(:,1)
+    
+  end subroutine lapack_zgesv_1
   subroutine gtoint(maxn, z, res, ierr)    
-    ! gives the integration :  { x^{n}exp[-zx^2] | n=0,...,maxn}
+    ! gives the integrations :  { Int_0^oo x^{n}exp[-zx^2] dx | n=0,...,maxn}
     use Mod_const, only : pi
     integer, intent(in) :: maxn
     complex(kind(0d0)), intent(in) :: z

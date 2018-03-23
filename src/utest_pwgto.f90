@@ -41,7 +41,11 @@ contains
     
     call Timer_begin(timer, "kinetic", ierr)
     call test_kinetic
-    call Timer_end(timer, "kinetic", ierr)            
+    call Timer_end(timer, "kinetic", ierr)
+
+    !call Timer_begin(timer, "compare", ierr)
+    !    call test_compare_gwp
+    !    call Timer_end(timer, "compare", ierr)            
     
   end subroutine UTestPWGTO_run
   subroutine test_run
@@ -125,10 +129,10 @@ contains
     integer ierr
     
     call PWGTO_new(g, n, 1, 4, ierr); CHK_ERR(ierr)
-    g%ns(1)=2; g%zs(1)=1.2d0;  g%Ps(1) = 10.0d0
-    g%ns(2)=3; g%zs(2)=(0.9d0, -0.8d0); 
-    g%ns(3)=4; g%zs(3)=1.0d0; g%Rs(3) = 0.1d0;
-    g%ns(4)=2; g%zs(4)=1.1d0; g%Rs(4) = 0.1d0;
+    g%ns(1)=2; g%gs(1)=1.2d0;  g%Ps(1) = 10.0d0
+    g%ns(2)=3; g%gs(2)=(0.9d0, -0.8d0); 
+    g%ns(3)=4; g%gs(3)=1.0d0; g%Rs(3) = 0.1d0;
+    g%ns(4)=2; g%gs(4)=1.1d0; g%Rs(4) = 0.1d0;
     call PWGTO_setup(g, ierr); CHK_ERR(ierr)
     
     call PWGTO_overlap(g, 1, 1, S, ierr); CHK_ERR(ierr)    
@@ -136,26 +140,26 @@ contains
     A = 1
     
     calc = S(A, A) / (abs(PWGTO_nterm(g,A))**2)
-    call gtoint(10, g%zp(A,A), gg(:), ierr); CHK_ERR(ierr)
+    call gtoint(10, g%gP(A,A), gg(:), ierr); CHK_ERR(ierr)
     ref = gg(g%ns(A)*2)
     EXPECT_EQ_C(ref, calc, ierr)
 
     A = 2
     calc = S(A, A) / (abs(PWGTO_nterm(g,A))**2)
-    call gtoint(10, g%zp(A,A), gg(:), ierr); CHK_ERR(ierr)
+    call gtoint(10, g%gP(A,A), gg(:), ierr); CHK_ERR(ierr)
     ref = gg(g%ns(A)*2)
     EXPECT_EQ_C(ref, calc, ierr)
 
     A = 3
     calc = S(A, A)  / (abs(PWGTO_nterm(g,A))**2)
-    call gtoint(10, conjg(g%zs(A))+g%zs(A), gg(:), ierr); CHK_ERR(ierr)
+    call gtoint(10, conjg(g%gs(A))+g%gs(A), gg(:), ierr); CHK_ERR(ierr)
     ref = gg(g%ns(A)*2)
     EXPECT_EQ_C(ref, calc, ierr)
 
     A = 3
     B = 4
     calc = S(A, B) / (conjg(PWGTO_nterm(g,A))*PWGTO_nterm(g,B))
-    call gtoint(10, conjg(g%zs(A))+g%zs(B), gg(:), ierr); CHK_ERR(ierr)
+    call gtoint(10, conjg(g%gs(A))+g%gs(B), gg(:), ierr); CHK_ERR(ierr)
     ref = gg(g%ns(A)+g%ns(B))
     EXPECT_EQ_C(ref, calc, ierr)
     
@@ -171,14 +175,14 @@ contains
     complex(kind(0d0)) :: gg(0:20)
     
     call PWGTO_new(g, n, 1, 4, ierr)
-    g%ns(1)=0; g%zs(1)=1.1d0
-    g%ns(2)=0; g%zs(2)=1.1d0; g%Rs(2) = 0.1d0
-    g%ns(3)=2; g%zs(3)=1.1d0
-    g%ns(4)=2; g%zs(4)=1.1d0
+    g%ns(1)=0; g%gs(1)=1.1d0
+    g%ns(2)=0; g%gs(2)=1.1d0; g%Rs(2) = 0.1d0
+    g%ns(3)=2; g%gs(3)=1.1d0
+    g%ns(4)=2; g%gs(4)=1.1d0
     call PWGTO_setup(g, ierr)
        
     A = 1
-    call gtoint(10, g%zs(A)*2, gg(:), ierr); CHK_ERR(ierr)
+    call gtoint(10, g%gs(A)*2, gg(:), ierr); CHK_ERR(ierr)
     do m = 0, 2
        call PWGTO_multipole(g, 1,  m, 1, MM, ierr)
        calc = MM(A, A) / (abs(PWGTO_nterm(g,A))**2)
@@ -188,14 +192,14 @@ contains
     
     A = 2
     m = 1
-    call gtoint(20, g%zs(A)*2, gg(:), ierr); CHK_ERR(ierr)
+    call gtoint(20, g%gs(A)*2, gg(:), ierr); CHK_ERR(ierr)
     call PWGTO_multipole(g, 1, m, 1, MM, ierr)
     calc = MM(A,A) / (abs(PWGTO_nterm(g,A))**2)
     ref = g%Rs(A) * gg(g%ns(A)*2)
     EXPECT_EQ_C(ref, calc, ierr)
 
     A = 4
-    call gtoint(20, g%zs(A)*2, gg(:), ierr); CHK_ERR(ierr)
+    call gtoint(20, g%gs(A)*2, gg(:), ierr); CHK_ERR(ierr)
     call PWGTO_multipole(g, 1, 10, 1, MM, ierr)
     calc = MM(A,A) / (abs(PWGTO_nterm(g,A))**2)
     ref = gg(14)
@@ -211,8 +215,8 @@ contains
     integer A, B, ierr
 
     call PWGTO_new(g, n, 1, 2, ierr)
-    g%ns(1)=1; g%zs(1)=0.4d0; g%Rs(1) = 0.1d0
-    g%ns(2)=2; g%zs(2)=0.5d0; g%Rs(2) = 0.1d0
+    g%ns(1)=1; g%gs(1)=0.4d0; g%Rs(1) = 0.1d0
+    g%ns(2)=2; g%gs(2)=0.5d0; g%Rs(2) = 0.1d0
     call PWGTO_setup(g, ierr)
 
     call PWGTO_overlap(g,   1,    1, S, ierr)
@@ -261,10 +265,10 @@ contains
     pB = 0.2d0
 
     call PWGTO_new(g, n, 1, 2, ierr); CHK_ERR(ierr)
-    g % ns(1) = 0; g % zs(1) = z; g % Rs(1) = 0.1d0
-    g % ns(2) = 1; g % zs(2) = z; g % Rs(2) = 0.1d0
-    g % ns(3) = 0; g % zs(3) = z; g % Ps(3) = pA;    g % Rs(3) = 0.2d0
-    g % ns(4) = 1; g % zs(4) = z; g % Ps(4) = pB;    g % Rs(4) = 0.2d0
+    g % ns(1) = 0; g % gs(1) = z; g % Rs(1) = 0.1d0
+    g % ns(2) = 1; g % gs(2) = z; g % Rs(2) = 0.1d0
+    g % ns(3) = 0; g % gs(3) = z; g % Ps(3) = pA;    g % Rs(3) = 0.2d0
+    g % ns(4) = 1; g % gs(4) = z; g % Ps(4) = pB;    g % Rs(4) = 0.2d0
     call PWGTO_setup(g, ierr); CHK_ERR(ierr)
 
     call PWGTO_kineticP2(g, 1, 1, T, ierr); CHK_ERR(ierr)
@@ -293,6 +297,47 @@ contains
     call PWGTO_delete(g, ierr); CHK_ERR(ierr)
     
   end subroutine test_kinetic
+  subroutine test_compare_gwp
+    use Mod_GWP
+    use Mod_PWGTO
+    type(Obj_GWP)   :: gwp
+    type(Obj_PWGTO) :: pwgto
+    integer, parameter :: nf = 1, num=2
+    integer ierr
+    complex(kind(0d0)) :: S1(num,num), S2(num,num)
+    integer :: i, j
+
+    call PWGTO_new(pwgto, num, 1, 2, ierr)
+    call GWP_new(gwp, nf, num, 'c', ierr)
+
+    pwgto%gs(:) = (/0.5d0, 0.5d0/)
+    pwgto%Rs(:) = (/0.0d0, 0.3d0/)
+    pwgto%Ps(:) = (/0.0d0, 0.4d0/)
+    pwgto%thetas(:) = (/0.0d0, 0.0d0/)    
+
+    gwp%g(:,1,1) = pwgto%gs(:)
+    gwp%R(:,1)   = pwgto%Rs(:)
+    gwp%P(:,1)   = pwgto%Ps(:)
+    gwp%c(:)   = pwgto%thetas(:)
+    
+    call PWGTO_setup(pwgto, ierr)
+    call GWP_setup(gwp, ierr)
+
+    call PWGTO_overlap(pwgto, 1,1, S1(:,:), ierr)
+    call GWP_overlap(gwp, S2(:,:), ierr)
+
+    do i = 1, num
+       do j = 1, num
+          EXPECT_EQ_C(S1(i,j), S2(i,j), ierr)
+          if(ierr.ne.0) then
+             MSG_ERR("S1!=S2")
+             write(0,*) "(i,j):", i,j
+             return
+          end if          
+       end do
+    end do
+    
+  end subroutine test_compare_gwp
 end module UTestPWGTO
 
 program main

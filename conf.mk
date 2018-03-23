@@ -27,4 +27,4 @@ ${BUILD}/%.o: ${SRC}/%.f90
 # -- objects --
 OBJ_MONO_DY=$(call mod2obj, ${MODS0} spline mole_fit dy_mono)
 OBJ_BRANCH_DY=$(call mod2obj, ${MODS0} gwp spline mole_fit dy_branch)
-
+OBJ_BRANCH2_DY=$(call mod2obj, ${MODS0} pwgto spline mole_fit dy_branch2)

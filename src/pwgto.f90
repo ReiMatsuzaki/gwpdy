@@ -5,17 +5,17 @@ module Mod_PWGTO
   implicit none
   type Obj_PWGTO
      ! - data size -
-     integer :: num, maxnd
+     integer :: num, nf, maxnd
      ! - variable -
      integer, allocatable :: ns(:)
-     complex(kind(0d0)), allocatable :: zs(:) 
-     double precision,   allocatable :: Rs(:), Ps(:), gs(:)
+     complex(kind(0d0)), allocatable :: gs(:) 
+     double precision,   allocatable :: Rs(:), Ps(:), thetas(:)
      character(3), allocatable :: typ(:)
      ! - intermediate -
-     integer, allocatable :: nlc(:,:)   ! nlc(n,A) number of nth polynomial
+     integer, allocatable :: nlc(:,:)     ! nlc(n,A) number of nth polynomial
      integer, allocatable :: nns(:,:,:) ! nns(n,A,:) powers of nth polynomial
      complex(kind(0d0)), allocatable :: cs(:,:,:) ! cs(n,A,:) : coeff of nthpoly
-     complex(kind(0d0)), allocatable :: zP(:,:), RP(:,:), eP(:,:)
+     complex(kind(0d0)), allocatable :: gP(:,:), RP(:,:), eP(:,:)
      complex(kind(0d0)), allocatable :: d(:,:,:,:,:) ! d(A,B,0:maxnd,0:maxnd,0:maxnd*2)
   end type Obj_PWGTO
 contains
@@ -29,20 +29,14 @@ contains
     this%num   = num
     this%maxnd = maxnd
     allocate(this%ns(num))
-    allocate(this%zs(num), this%Rs(num), this%Ps(num), this%gs(num))
-    allocate(this%zP(num,num), this%RP(num,num), this%eP(num,num))
+    allocate(this%gs(num), this%Rs(num), this%Ps(num), this%thetas(num))
+    allocate(this%gP(num,num), this%RP(num,num), this%eP(num,num))
     allocate(this%d(num,num,0:maxnd,0:maxnd,0:maxnd*2))
     this%ns = 0
-    this%zs = (0.0d0, 0.0d0)
+    this%gs = (0.0d0, 0.0d0)
     this%Rs = 0.0d0
     this%Ps = 0.0d0
-    this%gs = 0.0d0
-
-    !allocate(this%ncs(numNCs))
-    !do icn = 1, numNCs
-    !   call NCs_new(this%ncs(icn), num, 3, ierr); CHK_ERR(ierr)
-    !end do
-    !this%ncs(1) %typ = "0"
+    this%thetas = 0.0d0
 
     allocate(this%typ(numNCs))
     this%typ(1) = "0"
@@ -57,7 +51,7 @@ contains
     type(Obj_PWGTO) :: this
     integer, intent(out) :: ierr
     integer A, B, nA, n, inc
-    complex(kind(0d0)) :: zA, c0
+    complex(kind(0d0)) :: gA, c0
     complex(kind(0d0)), allocatable :: gg(:)
     
     ierr = 0
@@ -66,8 +60,8 @@ contains
     ! -- normalization term / derivative basis --
     do A = 1, this % num
        nA = this%ns(A)
-       zA = this%zs(A)
-       call gtoint(2*nA, conjg(zA)+zA, gg, ierr); CHK_ERR(ierr)
+       gA = this%gs(A)
+       call gtoint(2*nA, conjg(gA)+gA, gg, ierr); CHK_ERR(ierr)
        c0 = 1.0d0/sqrt(gg(2*nA))
 
        do inc = 1, size(this%typ)
@@ -82,7 +76,7 @@ contains
              else
                 this%nlc(inc,A) = 3
              end if
-             this%cs(inc,A, 1) = c0*2*zA
+             this%cs(inc,A, 1) = c0*2*gA
              this%nns(inc,A, 1) = nA+1
              this%cs(inc,A, 2) = -c0*ii*this%Ps(A)
              this%nns(inc,A, 2) = nA
@@ -105,23 +99,32 @@ contains
     do B = 1, this % num
        do A = 1, this % num
           call prod_gauss(&
-               this%zs(A), this%Rs(A), this%Ps(A), this%gs(A), &
-               this%zs(B), this%Rs(B), this%Ps(B), this%gs(B), &
-               this%zP(A,B), this%RP(A,B), this%eP(A,B))
+               this%gs(A), this%Rs(A), this%Ps(A), this%thetas(A), &
+               this%gs(B), this%Rs(B), this%Ps(B), this%thetas(B), &
+               this%gP(A,B), this%RP(A,B), this%eP(A,B))
           n = this % maxnd
-          call hermite_coef_d(this%zP(A,B), this%RP(A,B), &
+          call hermite_coef_d(this%gP(A,B), this%RP(A,B), &
                this%Rs(A), this%Rs(B), &
                n,n, this%d(A,B,:,:,:))
        end do
     end do
     
   end subroutine PWGTO_setup
+  subroutine PWGTO_dump(this, ifile, ierr)
+    type(Obj_PWGTO) :: this
+    integer, intent(in) :: ifile
+    integer, intent(out) :: ierr
+    ierr = 0
+    write(ifile,*) this%Rs
+    write(ifile,*) this%Ps
+  end subroutine PWGTO_dump
   subroutine PWGTO_delete(this, ierr)
     type(Obj_PWGTO) :: this
     integer, intent(out) :: ierr
     ierr = 0
-    deallocate(this%zs, this%Rs, this%Ps, this%gs)
-    deallocate(this%zP, this%RP, this%eP, this%d)
+    deallocate(this%gs, this%Rs, this%Ps, this%thetas)
+    deallocate(this%nlc, this%nns, this%cs)
+    deallocate(this%gP, this%RP, this%eP, this%d)
   end subroutine PWGTO_delete
   ! -- calc  --
   subroutine PWGTO_overlap(this, ibra, iket, X, ierr)
@@ -137,7 +140,7 @@ contains
 
     do A = 1, this % num
        do B = 1, this % num
-          call hermite_1dint(this%zP(A,B), hint)
+          call hermite_1dint(this%gP(A,B), hint)
           acc = 0.0d0
           do i = 1, this%nlc(ibra,A)
              do j = 1, this%nlc(iket,B)
@@ -170,7 +173,7 @@ contains
     do A = 1, this % num
        do B = 1, this % num
           hint(:, :) = 0.0d0
-          call hermite_1drm(this%zP(A,B), this%RP(A,B), m ,hint)
+          call hermite_1drm(this%gP(A,B), this%RP(A,B), m ,hint)
           acc = 0.0d0
           do i = 1, this%nlc(ibra,A)
              do j = 1, this%nlc(iket,B)
@@ -195,17 +198,17 @@ contains
     integer, intent(out) :: ierr
     integer :: A, B, i, j, nA, nB
     double precision :: PA, PB 
-    complex(kind(0d0)) acc, tmp, hint, cAcB, zA, zB
+    complex(kind(0d0)) acc, tmp, hint, cAcB, gA, gB
     
     ierr = 0
     call check_matrix(this, X, ierr); CHK_ERR(ierr)
     do A = 1, this % num
        do B = 1, this % num
-          zA = conjg(this % zs(A))
-          zB = this % zs(B)
+          gA = conjg(this % gs(A))
+          gB = this % gs(B)
           PA = this % Ps(A)
           PB = this % Ps(B)          
-          call hermite_1dint(this%zP(A,B), hint)
+          call hermite_1dint(this%gP(A,B), hint)
           acc = 0.0d0
           do i = 1, this%nlc(ibra,A)
              do j = 1, this%nlc(iket,B)
@@ -213,17 +216,17 @@ contains
                 nB = this%nns(iket,B, j)
                 cAcB = conjg(this%cs(ibra,A,i)) * this%cs(iket,B,j)
 
-                tmp = 4*zA*zB * this%d(A,B, nA+1,nB+1,0) &
-                     -2*ii*zA*PB * this%d(A,B, nA+1,nB,0) &
-                     +2*ii*PA*zB * this%d(A,B, nA,nB+1,0) &
+                tmp = 4*gA*gB * this%d(A,B, nA+1,nB+1,0) &
+                     -2*ii*gA*PB * this%d(A,B, nA+1,nB,0) &
+                     +2*ii*PA*gB * this%d(A,B, nA,nB+1,0) &
                      +(PB*PA) * this%d(A,B, nA,nB,0)
                 if(nA.ne.0) then
                    tmp = tmp +nA*(ii*PB) * this%d(A,B, nA-1,nB,0)
-                   tmp = tmp -2*nA*zB * this%d(A,B, nA-1,nB+1,0)
+                   tmp = tmp -2*nA*gB * this%d(A,B, nA-1,nB+1,0)
                 end if
                 if(nB.ne.0) then
                    tmp = tmp +(-ii*PA)*nB * this%d(A,B, nA,nB-1,0)
-                   tmp = tmp -2*zA*nB * this%d(A,B, nA+1,nB-1,0)
+                   tmp = tmp -2*gA*nB * this%d(A,B, nA+1,nB-1,0)
                 end if
                 if(nB.ne.0.and.nA.ne.0) then
                    tmp = tmp +(nA*nB) * this%d(A,B, nA-1,nB-1,0)
@@ -261,24 +264,24 @@ contains
     end if
     
   end subroutine check_matrix
-  subroutine prod_gauss(zA, RA, PA, gA, zB, RB, PB, gB, zP, RP, eP)    
+  subroutine prod_gauss(gA, RA, PA, tA, gB, RB, PB, tB, gP, RP, eP)    
     ! compute gauss parameter of product conjg(GA).GB
     use Mod_const, only : II
-    complex(kind(0d0)), intent(in) :: zA, zB
-    double precision, intent(in)   :: RA, PA, gA, RB, PB, gB
-    complex(kind(0d0)) :: zP, RP, eP
-    complex(kind(0d0)) :: czA
-    czA =conjg(zA) 
-    zP = czA + zB
-    RP = (2*czA*RA+2*zB*RB-II*PA+ii*PB) / (2*zP)
-    eP = exp(-czA*RA*RA - zB*RB*RB &
+    complex(kind(0d0)), intent(in) :: gA, gB
+    double precision, intent(in)   :: RA, PA, tA, RB, PB, tB
+    complex(kind(0d0)) :: gP, RP, eP
+    complex(kind(0d0)) :: cgA
+    cgA =conjg(gA) 
+    gP = cgA + gB
+    RP = (2*cgA*RA+2*gB*RB-II*PA+ii*PB) / (2*gP)
+    eP = exp(-cgA*RA*RA - gB*RB*RB &
          +ii*RA*PA  - ii*PB*RB &
-         -ii*gA     + ii*gB &
-         +zP*RP**2)
+         -ii*tA     + ii*tB &
+         +gP*RP**2)
   end subroutine prod_gauss
-  recursive subroutine hermite_coef_d_0(zP,wPk,RAk,RBk,nAk,nBk,Nk, res)
+  recursive subroutine hermite_coef_d_0(gP,wPk,RAk,RBk,nAk,nBk,Nk, res)
     ! compute coefficient of Hermitian GTO exapanded for cartesian GTO
-    complex(kind(0d0)), intent(in)  :: zP, wPk
+    complex(kind(0d0)), intent(in)  :: gP, wPk
     double precision, intent(in)    :: RAk, RBk
     integer, intent(in) :: nAk, nBk, Nk
     complex(kind(0d0)) res, res0, res1, res2
@@ -292,27 +295,27 @@ contains
     end if
 
     if(nAk > 0) then
-       call hermite_coef_d_0(zP, wPk, RAk, RBk, nAk-1, nBk, Nk-1, res0)
-       call hermite_coef_d_0(zP, wPk, RAk, RBk, nAk-1, nBk, Nk,   res1)
-       call hermite_coef_d_0(zP, wPk, RAk, RBk, nAk-1, nBk, Nk+1, res2)
+       call hermite_coef_d_0(gP, wPk, RAk, RBk, nAk-1, nBk, Nk-1, res0)
+       call hermite_coef_d_0(gP, wPk, RAk, RBk, nAk-1, nBk, Nk,   res1)
+       call hermite_coef_d_0(gP, wPk, RAk, RBk, nAk-1, nBk, Nk+1, res2)
        res = & 
-            +1/(2*zP) *res0&
+            +1/(2*gP) *res0&
             +(wPk-RAk)*res1 &
             +(Nk+1)   *res2
     else
-       call hermite_coef_d_0(zP, wPk, RAk, RBk, nAk, nBk-1, Nk-1, res0)
-       call hermite_coef_d_0(zP, wPk, RAk, RBk, nAk, nBk-1, Nk,   res1)
-       call hermite_coef_d_0(zP, wPk, RAk, RBk, nAk, nBk-1, Nk+1, res2)
+       call hermite_coef_d_0(gP, wPk, RAk, RBk, nAk, nBk-1, Nk-1, res0)
+       call hermite_coef_d_0(gP, wPk, RAk, RBk, nAk, nBk-1, Nk,   res1)
+       call hermite_coef_d_0(gP, wPk, RAk, RBk, nAk, nBk-1, Nk+1, res2)
        res = &
-            +1/(2*zP) * res0 &
+            +1/(2*gP) * res0 &
             +(wPk-RBk)* res1 &
             +(Nk+1)   * res2
     end if
     
   end subroutine hermite_coef_d_0
-  subroutine hermite_coef_d(zP, wP,RA,RB, maxnA,maxnB, res)
+  subroutine hermite_coef_d(gP, wP,RA,RB, maxnA,maxnB, res)
     ! batch calculation of hermitian coefficient
-    complex(kind(0d0)), intent(in) :: zP, wP
+    complex(kind(0d0)), intent(in) :: gP, wP
     double precision, intent(in)   :: RA, RB
     integer, intent(in) :: maxnA, maxnB
     complex(kind(0d0)), intent(out) :: res(0:,0:,0:)
@@ -342,7 +345,7 @@ contains
                 if(nA > 0) then
                    v = v + (wP-RA) * res(nA-1,nB,Nk)
                    if(Nk-1 >= 0) then
-                      v = v + 1/(2*zP) * res(nA-1,nB,Nk-1)
+                      v = v + 1/(2*gP) * res(nA-1,nB,Nk-1)
                    end if
                    if(Nk+1 <= maxNk) then
                       v = v + (Nk+1)  * res(nA-1,nB,Nk+1)
@@ -350,7 +353,7 @@ contains
                 else if(nB > 0) then
                    v = v + (wP-RB) * res(nA,nB-1,Nk)
                    if(Nk-1 >= 0) then
-                      v = v + 1/(2*zP) * res(nA,nB-1,Nk-1)
+                      v = v + 1/(2*gP) * res(nA,nB-1,Nk-1)
                    end if
                    if(Nk+1 <= maxNk) then
                       v = v + (Nk+1)  * res(nA,nB-1,Nk+1)
@@ -371,18 +374,18 @@ contains
    ! end do
     
   end subroutine hermite_coef_d
-  subroutine hermite_1dint(zP, res)
+  subroutine hermite_1dint(gP, res)
     use Mod_const, only : pi
-    complex(kind(0d0)), intent(in) :: zP
+    complex(kind(0d0)), intent(in) :: gP
     complex(kind(0d0)), intent(out) :: res
-    res = sqrt(pi/zP)
+    res = sqrt(pi/gP)
   end subroutine hermite_1dint
-  recursive subroutine hermite_1drm_0(zP, wP, m, n, res, ierr)
+  recursive subroutine hermite_1drm_0(gP, wP, m, n, res, ierr)
     ! x H_n(x) = (2w)^{-1}H_{n+1}(x) + nH_{n-1}(x)
     ! S(m,n)   = x^m H_n
     !          = (2w)^{-1} x^{m-1}H_{n+1} + nH_x^{m-1}{n-1}
     !          = (2w)^{-1} S(m-1,n+1) + nS(m-1,n-1)
-    complex(kind(0d0)), intent(in) :: zP, wP
+    complex(kind(0d0)), intent(in) :: gP, wP
     integer, intent(in) :: m, n    
     complex(kind(0d0)), intent(out) :: res
     integer, intent(out) :: ierr
@@ -407,23 +410,23 @@ contains
     end if
 
     if(n.eq.0 .and. m.eq.0) then
-       call hermite_1dint(zP, res)
+       call hermite_1dint(gP, res)
        return
     end if
 
-    call hermite_1drm_0(zP, wP, m-1, n+1, res0, ierr); CHK_ERR(ierr)
-    res = 1/(2*zP) * res0
-    call hermite_1drm_0(zP, wP, m-1, n  , res0, ierr); CHK_ERR(ierr)
+    call hermite_1drm_0(gP, wP, m-1, n+1, res0, ierr); CHK_ERR(ierr)
+    res = 1/(2*gP) * res0
+    call hermite_1drm_0(gP, wP, m-1, n  , res0, ierr); CHK_ERR(ierr)
     res = res + wP * res0
     if(n.ne.0) then
-       call hermite_1drm_0(zP, wP, m-1, n-1, res0, ierr); CHK_ERR(ierr)
+       call hermite_1drm_0(gP, wP, m-1, n-1, res0, ierr); CHK_ERR(ierr)
        res = res + n * res0
     end if
     
   end subroutine hermite_1drm_0
-  subroutine hermite_1drm(zP, wP, mx, res)
+  subroutine hermite_1drm(gP, wP, mx, res)
     ! batch calculation of hermite 1drm
-    complex(kind(0d0)), intent(in) :: zP, wP
+    complex(kind(0d0)), intent(in) :: gP, wP
     integer, intent(in) :: mx
     complex(kind(0d0)), intent(out) :: res(0:,0:)
     integer :: m, Nk, nk1
@@ -435,12 +438,12 @@ contains
          end if
       end do
    end do
-   call hermite_1dint(zP, res(0, 0))
+   call hermite_1dint(gP, res(0, 0))
    do m = 1, mx
       nk1 = min(m, mx)
       res(m, 0:nk1) = wP * res(m-1,0:nk1)
       do Nk = 0, nk1-1
-         res(m, Nk) = res(m, Nk) + 1/(2*zP)*res(m-1,Nk+1)
+         res(m, Nk) = res(m, Nk) + 1/(2*gP)*res(m-1,Nk+1)
       end do
       do Nk = 1, nk1
          res(m, Nk) = res(m, Nk) + Nk*res(m-1,Nk-1)

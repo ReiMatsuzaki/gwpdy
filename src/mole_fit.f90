@@ -10,11 +10,12 @@ module Mod_MoleFit
   type(Obj_Spline), allocatable :: spl_XkIJ_(:,:)
   public :: MoleFit_new, MoleFit_new_file, MoleFit_delete, MoleFit_H_X
 contains
-  subroutine MoleFit_new(ne, xs, HeIJ, XkIJ, ierr)
+  subroutine MoleFit_new(ne, xs, HeIJ, XkIJ, out_value, ierr)
     integer, intent(in) :: ne
     double precision, intent(in) :: xs(:)
     double precision, intent(in) :: HeIJ(:,:,:)
     double precision, intent(in) :: XkIJ(:,:,:)
+    character(*), intent(in) :: out_value
     integer, intent(out) :: ierr
     integer nx, i,j
 
@@ -36,16 +37,17 @@ contains
 
     do i = 1, ne_
        do j = 1, ne_
-          call Spline_new(spl_HeIJ_(i,j), nx, xs, HeIJ(:,i,j), "error", ierr)
+          call Spline_new(spl_HeIJ_(i,j), nx, xs, HeIJ(:,i,j), out_value, ierr)
           CHK_ERR(ierr)
-          call Spline_new(spl_XkIJ_(i,j), nx, xs, XkIJ(:,i,j), "error", ierr)
+          call Spline_new(spl_XkIJ_(i,j), nx, xs, XkIJ(:,i,j), out_value, ierr)
           CHK_ERR(ierr)
        end do
     end do    
   end subroutine MoleFit_new
-  subroutine MoleFit_new_file(fn_xs, fn_HeIJ, fn_XkIJ, ierr)
+  subroutine MoleFit_new_file(fn_xs, fn_HeIJ, fn_XkIJ, out_value, ierr)
     use Mod_sys, only : open_r
     character(*), intent(in) :: fn_xs, fn_HeIJ, fn_XkIJ
+    character(*), intent(in) :: out_value
     integer, intent(out) :: ierr
     integer, parameter :: ifile_xs = 2341, ifile_h = 2342
     integer, parameter :: ifile_xk = 2343
@@ -112,7 +114,7 @@ contains
     end do
 102 continue
     close(ifile_xk)
-    call MoleFit_new(ne, xs, HeIJ, XkIJ, ierr); CHK_ERR(ierr)
+    call MoleFit_new(ne, xs, HeIJ, XkIJ, out_value, ierr); CHK_ERR(ierr)
     
   end subroutine MoleFit_new_file
   subroutine MoleFit_delete

@@ -157,7 +157,7 @@ contains
              PP = this%P(i,k) + this%P(j,k)             
              tmp = tmp -g/2*dR**2 - 1/(4*g)*dP**2 + ii/2*dR*PP
           end do
-          res(i,j) = exp(tmp -ii*(this%c(i) - this%c(j)))
+          res(i,j) = exp(tmp -ii*this%c(i) +ii*this%c(j))
        end do
     end do
     

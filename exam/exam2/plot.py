@@ -27,7 +27,11 @@ if(not exists("fig")):
 plt.savefig("fig/r.pdf")
 plt.close()
 
-plt.plot(ts, abs(cs[:,0])**2)
+
+plt.plot(ts, abs(cs[:,0])**2, label="1")
+plt.plot(ts, abs(cs[:,1])**2, label="2")
+plt.plot(ts, abs(cs[:,1])**2+abs(cs[:,0])**2, label="all")
+plt.ylim(-0.05, 1.05)
 plt.savefig("fig/prob.pdf")
 plt.close()
 

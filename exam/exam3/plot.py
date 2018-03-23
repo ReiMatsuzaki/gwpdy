@@ -22,6 +22,7 @@ ts = np.arange(nt)*dt
 
 r1s = []
 prob1 = []
+prob2 = []
 for it in range(nt):
     dir_it = join("out", str(it))
     if(not exists(dir_it)):
@@ -30,6 +31,7 @@ for it in range(nt):
     r1s.append(r[0,0])
     c = csv2mat(join(dir_it, "c.csv"))
     prob1.append(abs(c[0,0])**2)
+    prob2.append(abs(c[0,1])**2)
 
 n = len(r1s)    
 plt.plot(ts[:n], r1s[:])
@@ -38,8 +40,11 @@ if(not exists("fig")):
 plt.savefig("fig/r.pdf")
 plt.close()
 
-
-plt.plot(ts, prob1)
+prob1 = np.array(prob1)
+prob2 = np.array(prob2)
+plt.plot(ts, prob1, label="1")
+plt.plot(ts, prob2, label="2")
+plt.plot(ts, prob1+prob2, label="all")
 plt.savefig("fig/prob.pdf")
 plt.close()
 

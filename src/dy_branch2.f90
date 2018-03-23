@@ -1,5 +1,5 @@
 #include "macros.fpp"
-module Mod_DyBranch
+module Mod_DyBranch2
   ! molecular wave function are expressed as
   !     Psi(r,Q,t) = \sum_K C_K(t) G[Q,x_K(t)] \phi_K[r;Q,c_K(t)]
   !
@@ -8,18 +8,23 @@ module Mod_DyBranch
   !   I : index of electron basis
   !   i : dimension
   implicit none
+  ! -- data size --
   integer nf_    ! # of freedom
   integer ne_    ! # of electron basis
   integer npath_ ! # of path
-  double precision m_ ! mass
+  ! -- variable --
   double precision, allocatable :: g_(:), R_(:,:), P_(:,:), theta_(:) ! GWP
-  complex(kind(0d0)), allocatable :: CC_(:), c_(:,:) ! coefficient
+  complex(kind(0d0)), allocatable :: CC_(:), c_(:,:) ! coefficient    
+  ! -- constant parameter --
+  double precision m_ ! mass
   integer :: nd_                    ! order of numerical differate
   character(8) :: inte_RP_          ! euler or RK4
-  double precision :: dydt_, dR_, dP_ ! finite difference for t, R and P
   double precision :: dt_
+  double precision :: dR_, dP_ ! finite difference for t, R and P  
   integer :: nt_, n1t_              ! number of time for print, number for each step
-  integer, parameter :: MAX_PATH=100
+  integer, parameter :: MAX_PATH=10
+  ! -- intermediate --
+  double precision :: dydt_
 contains
   ! ==== IO ====
   subroutine write_input(ierr)
@@ -151,6 +156,11 @@ contains
     integer, intent(in) :: nf, ne, npath
     integer, intent(out) :: ierr
     ierr = 0
+
+    if(nf.ne.1) then
+       MSG_ERR("invalid input")
+       ierr=1; return
+    end if
     
     nf_ = nf
     ne_ = ne
@@ -239,7 +249,7 @@ contains
     ! H_{KL} = <G_K c_{I,K} Phi_I | H | G_L c_{J,L} Phi_J >
     !        = c_{I,K}c_{I,L} <G_K|T|G_L> +
     !          c_{I,K}c_{J,L} (P_K+P_L)/2 (X_{IJ}(Q_K) + X_{IJ}(Q_L))/2 (K,L)
-    use Mod_GWP
+    use Mod_PWGTO
     use Mod_const, only : ii
     interface
        subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
@@ -251,18 +261,20 @@ contains
     integer, intent(out) :: ierr
     double precision :: dotR(npath_,nf_), dotP(npath_,nf_)
     integer KK
-    complex(kind(0d0)) :: HK(npath_,ne_,ne_), HH(npath_,npath_), SS(npath_,npath_), TT(npath_,npath_)
+    complex(kind(0d0)) :: HK(npath_,ne_,ne_), HH(npath_,npath_), SS(npath_,npath_), TTe(npath_,npath_), TTn(npath_,npath_)
     complex(kind(0d0)) :: HeIJ(npath_,ne_,ne_), XkIJ(npath_,nf_,ne_,ne_)
-    complex(kind(0d0)) :: P2(nf_, npath_,npath_), S(npath_,npath_)
-    type(Obj_GWP) :: gwp
+    complex(kind(0d0)) :: P2(nf_, npath_,npath_), S(npath_,npath_), dR(npath_,npath_), dP(npath_,npath_)
+    type(Obj_PWGTO) :: gwp
 
     ierr = 0
 
     ! -- nuclear part --
-    call make_GWP(gwp, ierr); CHK_ERR(ierr)
-    call gwp_overlap(gwp, S(:,:), ierr); CHK_ERR(ierr)
-    call gwp_p2(gwp, P2(:,:,:), ierr); CHK_ERR(ierr)
-    call GWP_delete(gwp, ierr); CHK_ERR(ierr)
+    call make_GWP("0RP", gwp, ierr); CHK_ERR(ierr)
+    call PWGTO_overlap(gwp, 1, 1, S(:,:), ierr); CHK_ERR(ierr)
+    call PWGTO_overlap(gwp, 1, 2, dR(:,:),ierr); CHK_ERR(ierr)
+    call PWGTO_overlap(gwp, 1, 3, dP(:,:),ierr); CHK_ERR(ierr)
+    call PWGTO_kineticP2(gwp, 1, 1, P2(1,:,:), ierr); CHK_ERR(ierr)
+    call PWGTO_delete(gwp, ierr); CHK_ERR(ierr)
 
     ! -- electron part --
     do KK = 1, npath_
@@ -277,10 +289,11 @@ contains
        call intet_diag(ne_, HK(KK,:,:), c_(KK,:), ierr); CHK_ERR(ierr)
     end do
 
-    call global_HIJ(HeIJ(:,:,:), XkIJ(:,:,:,:), HK(:,:,:), s(:,:), p2(:,:,:), &
-         dotR(:,:), SS(:,:), TT(:,:), HH(:,:), ierr)
+    call global_HIJ(HeIJ(:,:,:), XkIJ(:,:,:,:), s(:,:), p2(:,:,:),&
+         SS(:,:), HH(:,:), ierr)    
     CHK_ERR(ierr)
-
+    call global_T_el(HK, S, TTe, ierr)
+    call global_T_nu(dotR, dotP, dR, dP, TTn, ierr)
     !write(0,*)
     !write(0,*) "HeIJ(1)"
     !write(0,*) HeIJ(1,1,:)
@@ -288,16 +301,19 @@ contains
     !write(0,*) "XkIJ(1,1)"
     !write(0,*) XkIJ(1,1,1,:)
     !write(0,*) XkIJ(1,1,2,:)
-    !write(0,*) 
+    !write(0,*)
+    
     ! write(0,*) "HH"
     ! write(0,*) HH(1,:)
     ! write(0,*) HH(2,:)
-    ! write(0,*) 
-    ! write(0,*) "TT"
-    ! write(0,*) TT(1,:)
-    ! write(0,*) TT(2,:)
+    ! write(0,*) "TTe"
+    ! write(0,*) TTe(1,:)
+    ! write(0,*) TTe(2,:)
+    ! write(0,*) "TTn"
+    ! write(0,*) TTn(1,:)
+    ! write(0,*) TTn(2,:)    
 
-    HH(:,:) = HH(:,:) - II*TT(:,:)
+    HH(:,:) = HH(:,:) - II*(TTe(:,:)+TTn(:,:))
     ! write(0,*) 
     ! write(0,*) "H-iT"
     ! write(0,*) HH(1,:)
@@ -453,21 +469,37 @@ contains
     end if    
     
   end subroutine dot_RP
-  subroutine make_gwp(gwp, ierr)
-    use Mod_GWP
-    type(Obj_GWP) :: gwp
+  subroutine make_gwp(mode, gwp, ierr)
+    use Mod_PWGTO
+    character(*), intent(in) :: mode
+    type(Obj_PWGTO) :: gwp
     integer, intent(out) :: ierr
-    integer K, KK
-    call GWP_new(gwp, nf_, npath_, "c", ierr); CHK_ERR(ierr)
+    integer, parameter :: maxnd=2
+    integer numNCs
+    integer KK
+
+    ierr = 0
+    if(mode.eq."0") then
+       numNCs = 1
+    else if(mode.eq."0RP") then
+       numNCs = 3
+    else
+       MSG_ERR("unsupported")
+       ierr = 1; return
+    end if
+    
+    call PWGTO_new(gwp, npath_, numNCs, maxnd, ierr); CHK_ERR(ierr)
     do KK = 1, npath_
-       do k = 1, nf_
-          gwp%g(KK,k,k) = g_(KK)
-          gwp%R(KK,k)   = R_(KK,k)
-          gwp%P(KK,k)   = P_(KK,k)
-          gwp%c(KK)     = theta_(KK)
-       end do
+       gwp%gs(KK)     = g_(KK)
+       gwp%Rs(KK)     = R_(KK,1)
+       gwp%Ps(KK)     = P_(KK,1)
+       gwp%thetas(KK) = theta_(KK)
     end do
-    call GWP_setup(gwp, ierr); CHK_ERR(ierr)
+    if(mode.eq."0RP") then
+       gwp%typ(2) = "dR"
+       gwp%typ(3) = "dP"
+    end if
+    call PWGTO_setup(gwp, ierr); CHK_ERR(ierr)
     
   end subroutine make_gwp
   subroutine local_HIJ(HeIJ, XkIJ, P, res, ierr)
@@ -492,11 +524,10 @@ contains
     end do
     
   end subroutine LOCAL_HIJ
-  subroutine global_HIJ(HeIJ,XkIJ,HK, S, P2, dotR, resS, resT, resH, ierr)
+  subroutine global_HIJ(HeIJ,XkIJ,S, P2, resS, resH, ierr)
     use Mod_const, only : II
-    complex(kind(0d0)), intent(in) :: HeIJ(:,:,:), XkIJ(:,:,:,:), HK(:,:,:), S(:,:), P2(:,:,:)
-    double precision ,  intent(in) :: dotR(:,:)
-    complex(kind(0d0)), intent(out) :: resS(:,:), resT(npath_,npath_), resH(:,:)
+    complex(kind(0d0)), intent(in) :: HeIJ(:,:,:), XkIJ(:,:,:,:), S(:,:), P2(:,:,:)
+    complex(kind(0d0)), intent(out) :: resS(:,:), resH(:,:)
     integer, intent(out) :: ierr
     integer :: KK, LL, k
     complex(kind(0d0)) :: tmp
@@ -513,7 +544,7 @@ contains
     do KK = 1, npath_       
        do LL = 1, npath_
           ! - electronic Hamiltonian --
-          tmp = S(KK,LL)* dot_product(c_(KK,:), matmul(HK(KK,:,:)+HK(LL,:,:), c_(LL,:)))/2
+          tmp = S(KK,LL)* dot_product(c_(KK,:), matmul(HeIJ(KK,:,:)+HeIJ(LL,:,:), c_(LL,:)))/2
           do k = 1, nf_
              ! - kinetic -
              tmp = tmp + S(KK,LL)*P2(k,KK,LL)/(2*m_) * sum(conjg(c_(KK,:))*c_(LL,:))
@@ -525,20 +556,37 @@ contains
        end do
     end do
     
-    ! -- time derivative --
-    ! <GK, dot{GL}> = dot{R} <GK,d(GL)/dR>
-    !               = dot{R} (-iP) <GK,GL>
+  end subroutine global_HIJ
+  subroutine global_T_el(HK, S, res, ierr)
+    use Mod_const, only : II
+    complex(kind(0d0)), intent(in) :: HK(:,:,:), S(:,:)
+    complex(kind(0d0)), intent(out) :: res(:,:)
+    integer, intent(out) :: ierr
+    integer KK, LL
+    ierr = 0
     do KK = 1, npath_
        do LL = 1, npath_
-          tmp = -II * S(KK,LL) * dot_product(c_(KK,:), matmul(HeIJ(LL,:,:), c_(LL,:)))
-          do k = 1, nf_
-             tmp = tmp - II * S(KK,LL) * P_(LL,k)*dotR(LL,k) * sum(conjg(c_(KK,:))*c_(LL,:))
-          end do
-          resT(KK,LL) = tmp
+          res(KK,LL) = -II*S(KK,LL) * &
+               dot_product(c_(KK,:), matmul(HK(LL,:,:), c_(LL,:)))
+       end do
+    end do
+  end subroutine global_T_el
+  subroutine global_T_nu(dotR, dotP, dR, dP, res, ierr)
+    double precision ,  intent(in) :: dotR(:,:), dotP(:,:)
+    complex(kind(0d0)), intent(in) :: dR(:,:), dP(:,:)
+    complex(kind(0d0)), intent(out) :: res(:,:)
+    integer, intent(out) :: ierr
+    integer KK, LL
+    complex(kind(0d0)) dd
+    ierr = 0
+    do KK = 1, npath_
+       do LL = 1, npath_
+          dd = dot_product(c_(KK,:), c_(LL,:))
+          res(KK,LL) = dd*(dotR(LL,1)*dR(KK,LL) + dotP(LL,1)*dP(KK,LL))
        end do
     end do
     
-  end subroutine global_HIJ
+  end subroutine global_T_nu
   subroutine intet_diag(n, H, c, ierr)
     use Mod_const, only : II
     use Mod_math, only  : lapack_zheev
@@ -574,14 +622,14 @@ contains
   end subroutine intet_gdiag
   subroutine calc_probe(res, ierr)
     ! compute probability to find electronic state I
-    use Mod_GWP, only : Obj_GWP, GWP_overlap, GWP_delete
+    use Mod_PWGTO
     double precision, intent(out) :: res(:)
     integer, intent(out) :: ierr
-    type(Obj_GWP) :: gwp
+    type(Obj_PWGTO) :: gwp
     complex(kind(0d0)) :: cumsum, S(npath_, npath_)
     integer K, L, I
-    call make_gwp(gwp, ierr); CHK_ERR(ierr)
-    call GWP_overlap(gwp, S, ierr); CHK_ERR(ierr)
+    call make_gwp("0", gwp, ierr); CHK_ERR(ierr)
+    call PWGTO_overlap(gwp, 1, 1, S, ierr); CHK_ERR(ierr)
     ierr = 0
     
     do I = 1, ne_
@@ -593,7 +641,7 @@ contains
        end do
        res(I) = real(cumsum)
     end do
-    call GWP_delete(gwp, ierr); CHK_ERR(ierr)
+    call PWGTO_delete(gwp, ierr); CHK_ERR(ierr)
   end subroutine calc_probe
   subroutine calc_norm2(res, ierr)
     double precision, intent(out) ::  res
@@ -603,5 +651,5 @@ contains
     call calc_probe(probe, ierr); CHK_ERR(ierr)    
     res = sum(probe)
   end subroutine calc_norm2
-end module Mod_DyBranch
+end module Mod_DyBranch2
 

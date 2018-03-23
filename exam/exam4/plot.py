@@ -24,7 +24,7 @@ rs = []
 ps = []
 cs = []
 ccs = []
-prob1 = []
+probes = []
 for it in range(nt):
     dir_it = join("out", str(it))
     if(not exists(dir_it)):
@@ -33,6 +33,7 @@ for it in range(nt):
     p = csv2mat(join(dir_it, "p.csv"))
     c = csv2mat(join(dir_it, "c.csv"))
     cc = csv2mat(join(dir_it, "cc.csv"))
+    probes.append(csv2mat(join(dir_it, "probe.csv")))
     npath = len(cc)    
 
     if(npath==1):
@@ -40,14 +41,12 @@ for it in range(nt):
         ps.append([p[0,0], 0.0])
         cs.append( [[c[0,0], c[0,1]], [0.0, 0.0]])
         ccs.append([cc[0],          0.0])
+        
     else:
         rs.append([r[0,0], r[1,0]])
         ps.append([p[0,0], p[1,0]])
         cs.append( [[c[0,0], c[0,1]], [c[1,0], c[1,1]]])
         ccs.append([cc[0],  cc[1]])
-        
-    p1 = abs(np.sum(cc[:]*c[:,0]))**2
-    prob1.append(p1)
 
 rs = np.array(rs)
 n = len(rs[:,0])
@@ -92,11 +91,11 @@ plt.savefig("fig/norm.pdf")
 plt.close()
 
 n = len(ccs[:,0])
-pr1 = abs(ccs[:,0]*cs[:,0,0] + ccs[:,1]*cs[:,1,0])**2
-pr2 = abs(ccs[:,0]*cs[:,0,1] + ccs[:,1]*cs[:,1,1])**2
+probes = np.array(probes)
 plt.plot([1000,1000], [0, 1], "k--")
-plt.plot(ts[:n], pr1, label="1")
-plt.plot(ts[:n], pr2, label="2")
+plt.plot(ts[:n], probes[:,0], label="1")
+plt.plot(ts[:n], probes[:,1], label="2")
+plt.plot(ts[:n], probes[:,1]+probes[:,0], label="all")
 plt.legend()
 plt.savefig("fig/prob.pdf")
 plt.close()
