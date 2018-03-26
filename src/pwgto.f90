@@ -33,7 +33,7 @@ contains
     allocate(this%gP(num,num), this%RP(num,num), this%eP(num,num))
     allocate(this%d(num,num,0:maxnd,0:maxnd,0:maxnd*2))
     this%ns = 0
-    this%gs = (0.0d0, 0.0d0)
+    this%gs = (1.0d0, 0.0d0)
     this%Rs = 0.0d0
     this%Ps = 0.0d0
     this%thetas = 0.0d0
@@ -115,8 +115,12 @@ contains
     integer, intent(in) :: ifile
     integer, intent(out) :: ierr
     ierr = 0
-    write(ifile,*) this%Rs
-    write(ifile,*) this%Ps
+    write(ifile,*) "==== PWGTO ===="
+    write(ifile,*) "ns:", this%ns
+    write(ifile,*) "g:", this%gs
+    write(ifile,*) "R:", this%Rs
+    write(ifile,*) "P:", this%Ps
+    write(ifile,*) "==============="
   end subroutine PWGTO_dump
   subroutine PWGTO_delete(this, ierr)
     type(Obj_PWGTO) :: this
