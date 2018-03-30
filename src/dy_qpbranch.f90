@@ -10,13 +10,13 @@ module Mod_DyQPBranch
   ! -- variable --
   double precision, allocatable :: R_(:,:,:), P_(:,:,:)  ! x(K,A)
   complex(kind(0d0)), allocatable :: g_(:,:)
-  complex(kind(0d0)), allocatable :: c_(:), d_(:,:,:) ! c_(K), d_(K,A,I)
+  complex(kind(0d0)), allocatable :: Ctot_(:), C_(:,:,:) ! C_(K,A,I)
   ! -- time constant --
   double precision :: m_ ! mass  
   double precision :: dt_, dR_, dP_
   integer :: nt_, n1t_
   character(8) :: inte_RP_     ! euler or RK4
-  character(3) :: mode_        ! SET or PSA
+  integer, allocatable :: mode_(:)        ! mode_(K) : 0:NON, 1:SET or 2:PSA
   ! -- intermediate --
   double precision :: dydt_
   integer :: np_
@@ -29,21 +29,26 @@ contains
     ierr = 0
     nf_ = nf
     ne_ = ne
+    maxnuc_ = maxnuc
     maxnp_ = maxnp
     np_ = 1
 
     allocate(nnuc_(maxnp))
-    allocate(R_(maxnp,maxnuc,nf), P_(maxnp,maxnuc,nf_), c_(maxnp), d_(maxnp, maxnp, ne))    
+    allocate(R_(maxnp,maxnuc,nf), P_(maxnp,maxnuc,nf_))
+    allocate(Ctot_(maxnp), C_(maxnp, maxnuc, ne))    
     allocate(g_(maxnp,maxnuc))
+    allocate(mode_(maxnp))
     nnuc_(:) = 0
     nnuc_(1) = 1
     g_ = 1
     R_ = 0
     P_ = 0
-    d_ = 0
     C_ = 0
-    d_(1,1,1) = 1
-    C_(1) = 1
+    Ctot_ = 0
+    C_(1,1,1) = 1
+    Ctot_(1) = 1
+    mode_(:) = 0
+    mode_(1) = 1
     
     m_ = 1
     dt_ = 1
@@ -53,7 +58,6 @@ contains
     n1t_ = 1
 
     inte_RP_ = "euler"
-    mode_ = "SET"
     
   end subroutine DyQPBranch_new
   subroutine DyQPBranch_setup(ierr)
@@ -65,17 +69,22 @@ contains
        call calc_norm2_path(KK, norm2, ierr); CHK_ERR(ierr)
        if(norm2<1.0d-10) then
           MSG_ERR("norm is too small")
+          write(0,*) "norm: ", norm2
           ierr = 1; return
        end if
-       d_(KK,:,:) = d_(KK,:,:)/sqrt(norm2)
+       C_(KK,:,:) = C_(KK,:,:)/sqrt(norm2)
     end do
 
     call calc_norm2(norm2, ierr); CHK_ERR(ierr)
     if(norm2<1.0d-10) then
        MSG_ERR("global norm is too small")
+       write(*,*) "KK, Ctot, C"
+       do KK = 1, np_
+          write(*,*) KK, Ctot_(KK), C_(KK,:,:)
+       end do
        ierr = 1; return
     end if
-    C_(:) = C_(:)/sqrt(norm2)
+    Ctot_(:) = Ctot_(:)/sqrt(norm2)
 
     if(inte_RP_.ne."euler" .and. inte_RP_.ne."RK4") then
        MSG_ERR("unsupported inte_RP_")
@@ -85,17 +94,39 @@ contains
     dydt_ = dt_/n1t_
     
   end subroutine DyQPBranch_setup
+  subroutine DyQPBranch_dump(ifile, ierr)
+    integer, intent(in) :: ifile
+    integer, intent(out) :: ierr
+    integer KK
+    ierr = 0
+    write(ifile,*) "==== DyQPBRanch ===="
+    write(ifile,*) "nf:", nf_
+    write(ifile,*) "ne:", ne_
+    write(ifile,*) "maxnuc:", maxnuc_
+    write(ifile,*) "maxnp:", maxnp_
+    write(ifile,*) "np:", np_
+    write(ifile,*) "paths:"
+    do KK = 1, np_
+       write(ifile,'(A,I0,A)') "-- path(K = ", KK, ") --"
+       write(ifile,*) "Ctot:", Ctot_(KK)
+       write(ifile,*) "C:", C_(KK,:,:)
+       write(ifile,*) "R:", R_(KK,nnuc_(KK), :)
+       write(ifile,*) "P:", P_(KK,nnuc_(KK), :) 
+    end do
+    write(ifile,*) "==================="
+  end subroutine DyQPBranch_dump
   subroutine DyQPBranch_delete(ierr)
     integer, intent(out) :: ierr
     ierr = 0
     deallocate(nnuc_)
-    deallocate(R_, P_, d_, C_)
-    deallocate(g_)
+    deallocate(R_, P_, Ctot_, C_)
+    deallocate(g_, mode_)
   end subroutine DyQPBranch_delete
   ! ==== calc ====
   subroutine update_set(calc_H_X, KK, ierr)
     use Mod_PWGTO
     use Mod_const, only : II
+    use Mod_Math, only : intet_diag
     interface
        subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
          double precision, intent(in) :: Q(:)
@@ -108,16 +139,15 @@ contains
     double precision  :: dotR(nf_), dotP(nf_)
     integer :: k
     complex(kind(0d0)) :: HeIJ(np_,ne_,ne_), XkIJ(np_,nf_,ne_,ne_)
-    complex(kind(0d0)) :: H0(ne_,ne_), H1(ne_,ne_), H2(ne_,ne_), d(ne_)
+    complex(kind(0d0)) :: H0(ne_,ne_), H1(ne_,ne_), H2(ne_,ne_), C(ne_)
     double precision :: R(nf_), P(nf_)
-    type(Obj_PWGTO) :: nbasis
 
     if(nnuc_(KK).ne.1) then
        MSG_ERR("nnuc_(KK)!=1")
        ierr = 1; return
     end if
     
-    R(:) = R_(KK,1,:); P(:) = P_(KK,1,:); d(:) = d_(KK,1,:)
+    R(:) = R_(KK,1,:); P(:) = P_(KK,1,:); C(:) = C_(KK,1,:)
     do k = 1, nf_
        R(k) = R(k) + dR_
        call calc_H_X(R(:), HeIJ(KK,:,:), XkIJ(KK,:,:,:), ierr); CHK_ERR(ierr)
@@ -126,7 +156,7 @@ contains
        call calc_H_X(R(:), HeIJ(KK,:,:), XkIJ(KK,:,:,:), ierr); CHK_ERR(ierr)
        call hamiltonian(HeIJ(KK,:,:), XkIJ(KK,:,:,:), P, H2, ierr)
        R(k) = R(k) + dR_
-       dotP(:) = -real(dot_product(d, matmul(H1-H2, d)))/(2*dR_)
+       dotP(:) = -real(dot_product(C, matmul(H1-H2, C)))/(2*dR_)
     end do
         
     call calc_H_X(R(:), HeIJ(KK,:,:), XkIJ(KK,:,:,:), ierr); CHK_ERR(ierr)
@@ -137,11 +167,11 @@ contains
        P(k) = P(k) -2*dP_
        call hamiltonian(HeIJ(KK,:,:), XkIJ(KK,:,:,:), P, H2, ierr); CHK_ERR(ierr)
        P(k) = P(k) + dP_
-       dotR(:) = real(dot_product(d, matmul(H1-H2, d)))/(2*dP_)
+       dotR(:) = real(dot_product(C, matmul(H1-H2, C)))/(2*dP_)
     end do
     
     ! -- update --       
-    call intet_diag(ne_, H0(:,:), d_(KK,1,:), ierr); CHK_ERR(ierr)
+    call intet_diag(ne_, H0(:,:), dydt_, C_(KK,1,:), ierr); CHK_ERR(ierr)
     R_(KK,1,:) = R_(KK,1,:) + dotR(:)*dydt_
     P_(KK,1,:) = P_(KK,1,:) + dotP(:)*dydt_
     
@@ -166,12 +196,12 @@ contains
     close(ifile)
   end subroutine write_input
   subroutine write_status(it, ierr)
+    use Mod_Math, only : dten2csv, cvec2csv, dvec2csv, cten2csv, cmat2csv, ivec2csv
     use Mod_sys, only : open_w, mkdirp_if_not
     integer, intent(in) :: it
     integer, intent(out) :: ierr
     character(50) :: fn, dir_it
     integer :: ifile
-    integer :: KK, I, k
     double precision :: probe(ne_)
     ifile = 1242
 
@@ -181,49 +211,51 @@ contains
     write(fn, '(A, "/", A)') trim(dir_it), "param.json"
     call open_w(ifile, fn, ierr); CHK_ERR(ierr)
     write(ifile, *) "{"
-    write(ifile, '(A,A,A,A,I0,A)') '"', "np",   '"', ":", np_, ","
-    write(ifile, '(A,A,A,A,A,A,A)') '"',   "mode", '"', ":", '"', mode_, '"'
+    write(ifile, '(A,I0,A)') '"np": ', np_
     write(ifile, *) "}"
     close(ifile)
     ifile = ifile + 1
 
+    write(fn,'(A, "/", A)') trim(dir_it), "mode.csv"
+    call ivec2csv(mode_, fn, ierr); CHK_ERR(ierr)
+
+    write(fn, '(A, "/", A)') trim(dir_it), "g.csv"
+    call cmat2csv(g_, fn, ierr); CHK_ERR(ierr)
+    
     write(fn, '(A, "/", A)') trim(dir_it), "r.csv"
     call dten2csv(R_, fn, ierr); CHK_ERR(ierr)
 
     write(fn, '(A, "/", A)') trim(dir_it), "p.csv"
     call dten2csv(P_, fn, ierr); CHK_ERR(ierr)
 
-    write(fn, '(A, "/", A)') trim(dir_it), "c.csv"
-    call cvec2csv(C_, fn, ierr); CHK_ERR(ierr)
+    write(fn, '(A, "/", A)') trim(dir_it), "ctot.csv"
+    call cvec2csv(Ctot_, fn, ierr); CHK_ERR(ierr)
 
-    write(fn, '(A, "/", A)') trim(dir_it), "d.csv"
-    call cten2csv(d_, fn, ierr); CHK_ERR(ierr)
+    write(fn, '(A, "/", A)') trim(dir_it), "c.csv"
+    call cten2csv(c_, fn, ierr); CHK_ERR(ierr)
 
     call calc_probe(probe, ierr); CHK_ERR(ierr)
     write(fn,'("out/", I0, "/", A)') it, "probe.csv"
     call dvec2csv(probe, fn, ierr); CHK_ERR(ierr)
     
   end subroutine write_status
-  ! ==== utils ====
-  subroutine calc_norm2_path(KK, res, ierr)
-    use Mod_PWGTO
-    integer, intent(in) :: KK
-    double precision, intent(out) :: res
+  subroutine print_status(it, ierr)
+    integer, intent(in) :: it
     integer, intent(out) :: ierr
-    type(Obj_PWGTO) :: nbasis
-    complex(kind(0d0)) :: S(nnuc_(KK), nnuc_(KK))
-    integer I
+    integer KK
     ierr = 0
-    
-    call make_nbasis("0", KK, nbasis, ierr); CHK_ERR(ierr)
-    call PWGTO_overlap(nbasis, 1, 1, S(:,:), ierr); CHK_ERR(ierr)
-    call PWGTO_delete(nbasis, ierr)
-    res = 0
-    do I = 1, ne_
-       res = res + real(dot_product(d_(KK,:,I), matmul(S, d_(KK,:,I))))
+    write(*,'("t: ", F20.10)') it*n1t_*dt_    
+    do KK = 1, np_
+       write(*,*) "-- K=", KK, " --"
+       write(*,*) "mode:", mode_(KK)
+       write(*,'("Ctot:", F20.10, F20.10)') real(Ctot_(KK)), aimag(Ctot_(KK))       
+       write(*,*) "R:", R_(KK, :, :)
+       write(*,*) "P:", P_(KK, :, :)
+       write(*,*) "C:", C_(KK,:,:)
     end do
-    
-  end subroutine calc_norm2_path
+    write(*,*) "========================="
+  end subroutine print_status
+  ! ==== utils ====
   subroutine make_nbasis(mode, KK, res, ierr)
     use Mod_PWGTO
     character(*), intent(in) :: mode
@@ -247,13 +279,19 @@ contains
        MSG_ERR("KK==0 is not impl")
        ierr = 1 ; return
     end if
+
+    if(nnuc_(KK).eq.0) then
+       MSG_ERR("nnuc_(KK)==0")
+       write(0,*) "KK:", KK
+       ierr = 1; return
+    end if
     
     call PWGTO_new(res, nnuc_(KK), numNCs, maxnd, ierr); CHK_ERR(ierr)
     do A = 1, nnuc_(KK)
        res%gs(A)     = g_(KK,A)
        res%Rs(A)     = R_(KK,A,1)
        res%Ps(A)     = P_(KK,A,1)
-       res%thetas(KK) = 0
+       res%thetas(A) = 0
     end do
     if(mode.eq."0RP") then
        res%typ(2) = "dR"
@@ -285,100 +323,42 @@ contains
     end do
     
   end subroutine hamiltonian
-  subroutine intet_diag(n, H, c, ierr)
-    use Mod_const, only : II
-    use Mod_math, only  : lapack_zheev
-    integer, intent(in) :: n
-    complex(kind(0d0)), intent(in) :: H(n,n)
-    complex(kind(0d0)), intent(inout) :: c(n)
+  subroutine calc_norm2_path(KK, res, ierr)
+    use Mod_PWGTO
+    integer, intent(in) :: KK
+    double precision, intent(out) :: res
     integer, intent(out) :: ierr
-    double precision :: w(n)
-    complex(kind(0d0)) :: U(n,n), UH(n,n)
-
-    call lapack_zheev(n, H, w, U, ierr); CHK_ERR(ierr)
-    UH(:,:) = conjg(transpose(U(:,:)))
-    c(:)   = matmul(UH(:,:),       c(:))
-    c(:)   = exp(-II*w(:)*dydt_) * c(:)
-    c(:)   = matmul(U(:,:),        c(:))
-    
-  end subroutine intet_diag
-  subroutine dten2csv(x, fn, ierr)
-    double precision, intent(in) :: x(:,:,:)
-    character(*), intent(in) :: fn
-    integer, intent(out) :: ierr
-    integer, parameter :: ifile = 16231
-    integer i, j, k
-    
-    call open_w(ifile, fn, ierr); CHK_ERR(ierr)    
-    write(ifile, '("i,j,k,val")')
-    do i = 1, size(x, 1)
-       do j = 1, size(x, 2)
-          do k = 1, size(x, 3)
-             write(ifile,'(I0,",",I0,",",I0,",",F20.10)') i,j,k,x(i,j,k)
-          end do
-       end do
+    type(Obj_PWGTO) :: nbasis
+    complex(kind(0d0)) :: S(nnuc_(KK), nnuc_(KK))
+    integer I, nn
+    ierr = 0
+    nn = nnuc_(KK)    
+    call make_nbasis("0", KK, nbasis, ierr); CHK_ERR(ierr)
+    call PWGTO_overlap(nbasis, 1, 1, S(:,:), ierr); CHK_ERR(ierr)
+    call PWGTO_delete(nbasis, ierr)
+    res = 0
+    do I = 1, ne_
+       res = res + real(dot_product(C_(KK,:nn,I), matmul(S, C_(KK,:nn,I))))
     end do
-    close(ifile)
     
-  end subroutine dten2csv
-  subroutine cten2csv(x, fn, ierr)
-    complex(kind(0d0)), intent(in) :: x(:,:,:)
-    character(*), intent(in) :: fn
-    integer, intent(out) :: ierr
-    integer, parameter :: ifile = 16231
-    integer i, j, k
-    
-    call open_w(ifile, fn, ierr); CHK_ERR(ierr)    
-    write(ifile, '("i,j,k,re,im")')
-    do i = 1, size(x, 1)
-       do j = 1, size(x, 2)
-          do k = 1, size(x, 3)
-             write(ifile,'(I0,",",I0,",",I0,",",F20.10,F20.10)') i,j,k,real(x(i,j,k)),aimag(x(i,j,k))
-          end do
-       end do
-    end do
-    close(ifile)
-    
-  end subroutine cten2csv
-  subroutine dvec2csv(x, fn, ierr)
-    double precision, intent(in) :: x(:)
-    character(*), intent(in) :: fn
-    integer, intent(out) :: ierr
-    integer, parameter :: ifile = 16231
-    integer i
-    
-    call open_w(ifile, fn, ierr); CHK_ERR(ierr)    
-    write(ifile, '("i,val")')
-    do i = 1, size(x, 1)
-       write(ifile,'(I0,",",F20.10)') i,x(i)
-    end do
-    close(ifile)
-    
-  end subroutine dvec2csv
-  subroutine cvec2csv(x, fn, ierr)
-    complex(kind(0d0)), intent(in) :: x(:)
-    character(*), intent(in) :: fn
-    integer, intent(out) :: ierr
-    integer, parameter :: ifile = 16231
-    integer i
-    
-    call open_w(ifile, fn, ierr); CHK_ERR(ierr)    
-    write(ifile, '("i,j,k,re,im")')
-    do i = 1, size(x, 1)
-       write(ifile,'(I0,",",F20.10,F20.10)') i,real(x(i)),aimag(x(i))
-    end do
-    close(ifile)
-    
-  end subroutine cvec2csv
-  ! ==== utils(global) ====
+  end subroutine calc_norm2_path
   subroutine calc_probe(res, ierr)
     use Mod_PWGTO
     double precision, intent(out) :: res(:)
     integer, intent(out) :: ierr
-
-    MSG_ERR("not impl")
-    ierr = 1
+    integer KK
+    ierr = 0
     res = 0
+    do KK = 1, np_
+       if(nnuc_(KK).ne.1) then
+          MSG_ERR("nnuc(KK).ne.1")
+          write(0,*) "KK:", KK
+          write(0,*) "nnuc(KK):", nnuc_(KK)
+          ierr = 1; return
+       end if
+       
+       res(:) = res(:) + abs(Ctot_(KK)*C_(KK,1,:))**2
+    end do
     
     !type(Obj_PWGTO) :: nbasis
     !integer KK, LL, I
@@ -422,46 +402,61 @@ end module Mod_DyQPBranch
 module Mod_DyQPBranchPSA
   use Mod_DyQPBranch
   implicit none
-  double precision, allocatable   :: RR_(:,:), PP_(:,:)  ! RR_(KK,:), PP_(KK,:) : average path
-  complex(kind(0d0)), allocatable :: gg_(:), dd_(:,:)    ! gg_(KK), dd_(KK,I)
+  integer nlam_ ! size of eigen space.
+  double precision, allocatable   :: Rlam_(:,:,:), Plam_(:,:,:)  ! R(KK,lam,:), P_(KK,lam,:) : eigen phase
+  complex(kind(0d0)), allocatable :: glam_(:,:) ! g(KK,lam)   ! eigen width
+  complex(kind(0d0)), allocatable :: U_(:,:,:)  ! U(KK,lam,I) ! eigen vector
+  complex(kind(0d0)), allocatable :: Clam_(:,:) ! Clam(KK,I) 
 contains
-  subroutine DyQPBranchPSA_new(ierr)
+  subroutine DyQPBranchPSA_new(nlam, ierr)
+    integer, intent(in) :: nlam
     integer, intent(out) :: ierr
     ierr = 0
-    allocate(RR_(maxnp_,nf_), PP_(maxnp_,nf_), gg_(maxnp_))
+    nlam_ = nlam
+    if(nlam>ne_) then
+       MSG_ERR("nlam > ne_")
+       ierr = 1; return
+    end if
+    allocate(Rlam_(maxnp_,nlam,nf_))
+    allocate(Plam_(maxnp_,nlam,nf_))
+    allocate(glam_(maxnp_,nlam))
+    allocate(U_(maxnp_,nlam,ne_))
+    allocate(Clam_(maxnp_,nlam))
   end subroutine DyQPBranchPSA_New
   subroutine DyQPBranchPSA_delete(ierr)
     integer, intent(out) :: ierr
-    deallocate(RR_, PP_, gg_)
+    ierr = 0
+    deallocate(Rlam_, Plam_, glam_, U_, Clam_)
   end subroutine DyQPBranchPSA_delete
   subroutine begin_clpsa(KK, ierr)
     integer, intent(in) :: KK
     integer, intent(out) :: ierr    
-    integer :: A
+    integer :: lam
     
     ierr = 0
     if(nnuc_(KK).ne.1) then
        MSG_ERR("nnuc_(KK) != 1")
        ierr = 1; return
     end if
-    if(mode_.ne."SET") then
-       MSG_ERR("mode must be SET")
+    if(mode_(KK).ne.1) then
+       MSG_ERR("mode_(KK).ne.1")
        ierr = 1; return
     end if
+    if(maxnp_<np_+nlam_-1) then
+       MSG_ERR("too small maxnp")
+       ierr = 1
+       write(0,*) "maxnp:", maxnp_
+       write(0,*) "np:", np_
+       write(0,*) "nlam:", nlam_
+       return 
+    end if
 
-    mode_ = "PSA"     
-    nnuc_(1) = ne_
-    do A = 1, nnuc_(1)
-       R_(1, A, :) = R_(1,1,:)
-    end do
-    
-    RR_(KK,:) = R_(KK,1,:)
-    PP_(KK,:) = R_(KK,1,:)
-    dd_(KK,:) = d_(KK,1,:)
-    do A = 2, nnuc_(KK)
-       R_(KK,A,:) = R_(KK,A,:)
-       P_(KK,A,:) = P_(KK,:)
-       d_(KK,A,:) = d_(KK,A,:)
+    mode_(KK) = 2 ! to PSA mode
+
+    do lam = 1, nlam_
+       Rlam_(KK,lam,:) = R_(KK,1,:)
+       Plam_(KK,lam,:) = P_(KK,1,:)
+       glam_(KK,lam) = g_(KK,1)
     end do
     
   end subroutine begin_clpsa
@@ -477,16 +472,20 @@ contains
     integer, intent(in)  :: KK
     integer, intent(out) :: ierr
     double precision :: w0(ne_), w1(ne_), w2(ne_)
-    double precision :: dotR(nnuc_(KK),nf_), dotP(nnuc_(KK),nf_), R(nf_), P(nf_)  ! ne .eq. nnuc_(KK)
+    double precision :: dotR(nlam_,nf_), dotP(nlam_,nf_), R(nf_), P(nf_)
     complex(kind(0d0)) :: U(ne_,ne_), H(ne_,ne_), U1(ne_,ne_)
     complex(kind(0d0)) :: HeIJ(ne_,ne_), XkIJ(nf_,ne_,ne_)
-    complex(kind(0d0)) :: D(ne_)
-    integer :: k, A
+    integer :: k, lam
     double precision :: tmp
 
+    if(mode_(KK).ne.2) then
+       MSG_ERR("mode_(KK).ne.2") 
+       ierr = 1; return
+    end if
+
     ! -- solve Hamilton equation on the averaged path --    
-    R(:) = RR_(KK,:)
-    P(:) = PP_(KK,:)    
+    R(:) = R_(KK,1,:)
+    P(:) = P_(KK,1,:)    
     call calc_H_X(R(:), HeIJ(:,:), XkIJ(:,:,:), ierr); CHK_ERR(ierr)    
     do k = 1, nf_
        
@@ -500,7 +499,7 @@ contains
        !do KK = 1, ne_
        !   dotR(KK,:) = (w1(KK)-w2(KK))/(2*dP_)
        !end do
-       dotR(:,k) = P_(KK,:,k)/m_
+       dotR(:,k) = Plam_(KK,:,k)/m_
 
        R(k) = R(k) + dR_
        call calc_H_X(R(:), HeIJ(:,:), XkIJ(:,:,:), ierr); CHK_ERR(ierr)
@@ -517,50 +516,70 @@ contains
           w2(2) = tmp
        end if
        R(k) = R(k) + dR_
-       do A = 1, nnuc_(KK) ! assume nnuc_(KK) == ne_
-          dotP(A,k) = -(w1(A)-w2(A))/(2*dR_)
+       do lam = 1, nlam_ ! assume nnuc_(KK) == ne_
+          dotP(lam,k) = -(w1(lam)-w2(lam))/(2*dR_)
        end do
     end do
 
     ! -- diag hamiltonian at averaged point --    
-    R(:) = RR_(KK,:)
-    P(:) = PP_(KK,:)
+    R(:) = R_(KK,1,:)
+    P(:) = P_(KK,1,:)
     call calc_H_X(R(:), HeIJ(:,:), XkIJ(:,:,:), ierr); CHK_ERR(ierr)
     call hamiltonian(HeIJ, XkIJ, P, H, ierr); CHK_ERR(ierr)
-    call lapack_zheev(ne_, H, w0, U, ierr); CHK_ERR(ierr)
+    call lapack_zheev(ne_, H, w0, U_(KK,:,:), ierr); CHK_ERR(ierr)
 
     ! -- re-expand electronic wave packet with eigen state.
-    ! \chi(Q;<x(t)>) \Theta(r;Q) = \chi(Q;<x(t)>) \sum_I dd(KK,I) \Phi_I(r;Q)
-    !                            = \chi(Q;<x(t)>) \sum_Lambda D_Lam \Theta_Lam
-    ! To determine D_Lam, take inner product and get
-    !      dd(KK,I) = \sum_\Lambda D_\Lambda <\Phi_I|Theta_\Lambda>  
-    !               = \sum_\Lambda D_\Lambda U_{I\Lambda}         
-    call lapack_zgesv_1(ne_, U, dd_(KK,:), D(:), ierr); CHK_ERR(ierr)
+    !   \chi(Q;<x(t)>) \Theta(r;Q) = \chi(Q;<x(t)>) \sum_I CC(KK,I) \Phi_I(r;Q)
+    !                              = \chi(Q;<x(t)>) \sum_Lam C_Lam \Phi_Lam(r;Q,t)
+    ! To determine D_Lam, take inner product with Phi_Lam and get
+    !   C_Lam = \sum_I C_I <\chi(<x>)Phi_Lam|\chi(<x>)\Phi_I>
+    !         = \sum_I U_{I,lam}^* C_I
+    Clam_(KK,:) = matmul(transpose(conjg(U_(KK,:,:))), C_(KK,1,:))
 
-    ! -- update R,P and <R>,<P> --
-    do A = 1, nnuc_(KK)
-       R_(KK,A,:) = R_(KK,A,:) + dotR(KK,A,:)*dydt_
-       P_(KK,A,:) = P_(KK,A,:) + dotP(KK,A,:)*dydt_
-       RR_(KK,:)  = RR_(KK,:)  + abs(D(A))**2 * dotR(KK,A,:)*dydt_
-       PP_(KK,:)  = PP_(KK,:)  + abs(D(A))**2 * dotP(KK,A,:)*dydt_
+    ! -- update R_lam,P_lam and <R>,<P> --
+    do lam = 1, nlam_
+       Rlam_(KK,lam,:) = Rlam_(KK,lam,:) + dotR(lam,:) * dydt_
+       Plam_(KK,lam,:) = Plam_(KK,lam,:) + dotP(lam,:) * dydt_
+       R_(KK,1,:) = R_(KK,1,:) + abs(Clam_(KK,lam))**2 * dotR(lam,:)*dydt_
+       P_(KK,1,:) = P_(KK,1,:) + abs(Clam_(KK,lam))**2 * dotP(lam,:)*dydt_
     end do
     
-    ! -- update d_ave(t) by Hamiltonian at averaged point --
-    call intet_diag(ne_, H(:,:), dd_(KK,:), ierr); CHK_ERR(ierr)
-
-    ! -- update d(t) by expansion of eigen state --
-    ! \chi(Q;<x>) \sum_I dd_I\Phi_I(r;Q) = \sum_{AI} d_{AI}\chi_A\Phi_I
-    ! => \chi(Q;<x>) dd_I = sum_A d_{AI} \chi_A
-    ! => dd_I = sum_A <\chi(<x>)|\chi_A> d_{AI}
-    ! see Eq.(*)
-    do A = 1, ne_
-       dd_(KK,A,:) = matmul(U(:,:), D(:))
-    end do
+    ! -- update C(t) by Hamiltonian at averaged point --
+    call intet_diag(ne_, H(:,:), dydt_, C_(KK,1,:), ierr); CHK_ERR(ierr)
     
   end subroutine update_clpsa
-  subroutine end_clpsa(ierr)
-    integer, intent(out) :: ierr
+  subroutine end_clpsa(KK, ierr)
+    integer, intent(in) :: KK
+    integer, intent(out) :: ierr    
+    integer K, lam
+
     ierr = 0
-    mode_ = "SET"    
+
+    if(mode_(KK).ne.2) then
+       MSG_ERR("mode_(KK).ne.2")
+       ierr = 1; return
+    end if
+
+    mode_(KK) = 1 ! SET
+    nnuc_(KK) = 1
+    R_(KK,1,:) = Rlam_(KK,1,:)
+    P_(KK,1,:) = Plam_(KK,1,:)
+    g_(KK,1)   = glam_(KK,1)    
+    C_(KK,1,:) = U_(KK,1,:)
+    Ctot_(KK) = Clam_(KK,1)
+
+    do lam = 2, nlam_
+       K = np_+lam-1
+       mode_(K) = 1 ! SET
+       nnuc_(K) = 1
+       R_(K,1,:) = Rlam_(KK,lam,:)
+       P_(K,1,:) = Plam_(KK,lam,:)
+       g_(K,1)   = glam_(KK,lam)       
+       C_(K,1,:) = U_(KK,lam,:)
+       Ctot_(K)  = Clam_(KK,lam)
+    end do
+    
+    np_ = np_ + nlam_-1
+    
   end subroutine end_clpsa
 end module Mod_DyQPBranchPSA

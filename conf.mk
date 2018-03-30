@@ -9,7 +9,7 @@ ifeq (${FC},gfortran)
 	LDFLAGS=-llapack -lblas
 endif
 INCLUDE=-I${BUILD} -I${SRC}
-MODS0=const math timer strutil sys
+MODS0=const sys math timer strutil
 
 # -- utility function
 mod2obj = $(addprefix ${BUILD}/, $(addsuffix .o, $(1)))
