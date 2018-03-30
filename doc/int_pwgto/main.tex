@@ -1,0 +1,42 @@
+\documentclass[a4paper]{jsarticle}
+\usepackage[dvipdfmx]{graphicx}
+\usepackage{braket}
+
+% 数式を(Chapter.Number)の形にする。
+\makeatletter
+\renewcommand{\theequation}{  
+  \thesection.\arabic{equation} }
+  \@addtoreset{equation}{section}
+\makeatother
+
+\def\vector#1{\mbox{\boldmath $#1$}}
+\def\braces#1{\left( #1 \right)}
+\def\bracem#1{\left\{ #1 \right\}}
+\def\braceb#1{\left[ #1 \right]}
+\def\lefts{\left(}
+\def\rights{\right)}
+\def\leftb{\left[}
+\def\rightb{\right]}
+\def\leftm{\left\{}
+\def\rightm{\right\}}
+\newcommand{\pd}[2]{\frac{\partial #1}{\partial #2}}
+\newcommand{\pdd}[3]{\frac{\partial^2 #1}{\partial #2 \partial #3}}
+\begin{document}
+\title{}
+\author{松崎　黎}
+\maketitle
+
+\section{section}
+\subsection{subsection}
+
+\begin{figure}[h]
+ \begin{center}
+  \includegraphics[width=0.7\textwidth]{}
+  \caption{}
+  \label{}
+ \end{center}
+\end{figure}
+
+\bibliographystyle{jplain}
+\bibliography{library,books,paper}
+\end{document}

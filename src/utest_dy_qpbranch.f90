@@ -120,17 +120,21 @@ contains
     Ctot_(1) = 1
     c_(1,1,:) = (/(1.0d0,0.0d0), (0.0d0,0.0d0)/)
     Ctot_(1) = 1
+    gauss_mode_ = "thawed"
     
     dt_ = 1.0d0 !=> norm=0.1002185667E+01
     m_  = 2000.0d0
     call DyQPBranch_setup(ierr)
+    call DyQPBranchPSA_setup(ierr)
 
     ! -- update --
     call update_set(Tully1_calc_H_X, 1, ierr); CHK_ERR(ierr)
     call begin_clpsa(1, ierr); CHK_ERR(ierr)
     call update_clpsa(Tully1_calc_H_X, 1, ierr)
     call end_clpsa(1, ierr); CHK_ERR(ierr)
+    call DyQPBranch_dump(6, ierr)
     call update_set(Tully1_calc_H_X, 1, ierr); CHK_ERR(ierr)
+    call DyQPBranch_dump(6, ierr)
     call calc_norm2(norm2, ierr); CHK_ERR(ierr)
     EXPECT_NEAR_D(1.0d0, norm2, 3.0d-5, ierr)
     

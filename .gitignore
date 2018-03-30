@@ -24,3 +24,4 @@ f90/utest
 a.out
 *.x
 *.dSYM
+**/auto/

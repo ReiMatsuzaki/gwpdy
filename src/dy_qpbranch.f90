@@ -11,13 +11,14 @@ module Mod_DyQPBranch
   double precision, allocatable :: R_(:,:,:), P_(:,:,:)  ! x(K,A)
   complex(kind(0d0)), allocatable :: g_(:,:)
   complex(kind(0d0)), allocatable :: Ctot_(:), C_(:,:,:) ! C_(K,A,I)
+  integer, allocatable :: mode_(:)        ! mode_(K) : 0:NON, 1:SET or 2:PSA
   ! -- time constant --
   double precision :: m_ ! mass  
   double precision :: dt_, dR_, dP_
   integer :: nt_, n1t_
-  character(8) :: inte_RP_     ! euler or RK4
-  integer, allocatable :: mode_(:)        ! mode_(K) : 0:NON, 1:SET or 2:PSA
-  ! -- intermediate --
+  character(8) :: inte_RP_     ! euler or RK4  
+  character(6) :: gauss_mode_ ! frozen, thawed
+  ! -- intermediate --  
   double precision :: dydt_
   integer :: np_
 contains
@@ -57,6 +58,7 @@ contains
     nt_ = 10
     n1t_ = 1
 
+    gauss_mode_ = "frozen"
     inte_RP_ = "euler"
     
   end subroutine DyQPBranch_new
@@ -91,6 +93,11 @@ contains
        ierr = 1; return
     end if
 
+    if(gauss_mode_.ne."frozen" .and. gauss_mode_.ne."thawed") then
+       MSG_ERR("unsupported gauss_mode")
+       ierr = 1; return
+    end if
+
     dydt_ = dt_/n1t_
     
   end subroutine DyQPBranch_setup
@@ -105,13 +112,16 @@ contains
     write(ifile,*) "maxnuc:", maxnuc_
     write(ifile,*) "maxnp:", maxnp_
     write(ifile,*) "np:", np_
+    write(ifile,*) "inte_RP:", inte_RP_
+    write(ifile,*) "gauss_mode_:", gauss_mode_
     write(ifile,*) "paths:"
     do KK = 1, np_
        write(ifile,'(A,I0,A)') "-- path(K = ", KK, ") --"
        write(ifile,*) "Ctot:", Ctot_(KK)
        write(ifile,*) "C:", C_(KK,:,:)
-       write(ifile,*) "R:", R_(KK,nnuc_(KK), :)
-       write(ifile,*) "P:", P_(KK,nnuc_(KK), :) 
+       write(ifile,*) "g:", g_(KK,:nnuc_(KK))
+       write(ifile,*) "R:", R_(KK,:nnuc_(KK), :)
+       write(ifile,*) "P:", P_(KK,:nnuc_(KK), :) 
     end do
     write(ifile,*) "==================="
   end subroutine DyQPBranch_dump
@@ -136,11 +146,11 @@ contains
     end interface
     integer, intent(in) :: KK
     integer, intent(out) :: ierr
-    double precision  :: dotR(nf_), dotP(nf_)
+    double precision  :: dotR(nf_), dotP(nf_), dotx, doty
     integer :: k
     complex(kind(0d0)) :: HeIJ(np_,ne_,ne_), XkIJ(np_,nf_,ne_,ne_)
     complex(kind(0d0)) :: H0(ne_,ne_), H1(ne_,ne_), H2(ne_,ne_), C(ne_)
-    double precision :: R(nf_), P(nf_)
+    double precision :: R(nf_), P(nf_), dg
 
     if(nnuc_(KK).ne.1) then
        MSG_ERR("nnuc_(KK)!=1")
@@ -169,13 +179,65 @@ contains
        P(k) = P(k) + dP_
        dotR(:) = real(dot_product(C, matmul(H1-H2, C)))/(2*dP_)
     end do
+
+    select case(gauss_mode_)
+    case("frozen")
+       dotx=0; doty=0
+    case("thawed")
+       dg = 2*real(g_(KK,1))*sum(R)*dR_/sum(R*R)  !dg.(R,R) = g.2(R,dR) => dg = 2g.(R,dR)/(R,R)
+       g_(Kk,1) = g_(kK,1) + dg
+       call calc_H_X(R(:), HeIJ(KK,:,:), XkIJ(KK,:,:,:), ierr); CHK_ERR(ierr)
+       call hamiltonian(HeIJ(KK,:,:), XkIJ(KK,:,:,:), P, H1, ierr)
+       g_(Kk,1) = g_(kK,1) - 2*dg
+       call calc_H_X(R(:), HeIJ(KK,:,:), XkIJ(KK,:,:,:), ierr); CHK_ERR(ierr)
+       call hamiltonian(HeIJ(KK,:,:), XkIJ(KK,:,:,:), P, H2, ierr)
+       g_(Kk,1) = g_(kK,1) + dg
+       doty = -4*real(g_(KK,1))**2*real(dot_product(C, matmul(H1-H2, C)))/(2*dg)
+
+       g_(Kk,1) = g_(kK,1) + II*dg
+       call calc_H_X(R(:), HeIJ(KK,:,:), XkIJ(KK,:,:,:), ierr); CHK_ERR(ierr)
+       call hamiltonian(HeIJ(KK,:,:), XkIJ(KK,:,:,:), P, H1, ierr)
+       g_(Kk,1) = g_(kK,1) - 2*II*dg
+       call calc_H_X(R(:), HeIJ(KK,:,:), XkIJ(KK,:,:,:), ierr); CHK_ERR(ierr)
+       call hamiltonian(HeIJ(KK,:,:), XkIJ(KK,:,:,:), P, H2, ierr)
+       g_(Kk,1) = g_(kK,1) + II*dg
+       dotx = +4*real(g_(KK,1))**2*real(dot_product(C, matmul(H1-H2, C)))/(2*dg)
+       
+    case default
+       MSG_ERR("unsupported gauss_mode_")
+       ierr = 1; return
+    end select
     
     ! -- update --       
     call intet_diag(ne_, H0(:,:), dydt_, C_(KK,1,:), ierr); CHK_ERR(ierr)
-    R_(KK,1,:) = R_(KK,1,:) + dotR(:)*dydt_
-    P_(KK,1,:) = P_(KK,1,:) + dotP(:)*dydt_
+    g_(KK,1)   = g_(KK,1)   + dydt_*(dotx + II*doty)
+    R_(KK,1,:) = R_(KK,1,:) + dydt_*dotR(:)
+    P_(KK,1,:) = P_(KK,1,:) + dydt_*dotP(:)
     
   end subroutine update_set
+  subroutine update_vp(calc_H_X, KK, ierr)
+    use Mod_PWGTO
+    use Mod_const, only : II
+    use Mod_Math, only : intet_diag
+    interface
+       subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
+         double precision, intent(in) :: Q(:)
+         complex(kind(0d0)), intent(out) :: HeIJ(:,:), XkIJ(:,:,:)
+         integer, intent(out) :: ierr
+       end subroutine calc_H_X
+    end interface
+    integer, intent(in) :: KK
+    integer, intent(out) :: ierr
+    
+    ierr = 0
+    if(gauss_mode_.eq."thawed") then
+       MSG_ERR("not impl"); ierr = 1; return
+    end if
+    if(nf_.ne.1) then
+       MSG_ERR("not impl"); ierr = 1; return
+    end if
+    
+  end subroutine update_vp
   ! ==== IO ====
   subroutine write_input(ierr)
     use Mod_sys, only : open_w, mkdirp_if_not
@@ -406,7 +468,7 @@ module Mod_DyQPBranchPSA
   double precision, allocatable   :: Rlam_(:,:,:), Plam_(:,:,:)  ! R(KK,lam,:), P_(KK,lam,:) : eigen phase
   complex(kind(0d0)), allocatable :: glam_(:,:) ! g(KK,lam)   ! eigen width
   complex(kind(0d0)), allocatable :: U_(:,:,:)  ! U(KK,lam,I) ! eigen vector
-  complex(kind(0d0)), allocatable :: Clam_(:,:) ! Clam(KK,I) 
+  complex(kind(0d0)), allocatable :: Clam_(:,:) ! Clam(KK,I)  
 contains
   subroutine DyQPBranchPSA_new(nlam, ierr)
     integer, intent(in) :: nlam
@@ -423,6 +485,10 @@ contains
     allocate(U_(maxnp_,nlam,ne_))
     allocate(Clam_(maxnp_,nlam))
   end subroutine DyQPBranchPSA_New
+  subroutine DyQPBranchPSA_setup(ierr)
+    integer, intent(out) :: ierr
+    ierr = 0       
+  end subroutine DyQPBranchPSA_setup
   subroutine DyQPBranchPSA_delete(ierr)
     integer, intent(out) :: ierr
     ierr = 0
@@ -456,12 +522,13 @@ contains
     do lam = 1, nlam_
        Rlam_(KK,lam,:) = R_(KK,1,:)
        Plam_(KK,lam,:) = P_(KK,1,:)
-       glam_(KK,lam) = g_(KK,1)
+       glam_(KK,lam)   = g_(KK,1)
     end do
     
   end subroutine begin_clpsa
   subroutine update_clpsa(calc_H_X, KK, ierr)
     use Mod_math
+    use Mod_const, only : II
     interface
        subroutine calc_H_X(Q, HeIJ, XkIJ, ierr)
          double precision, intent(in) :: Q(:)
@@ -472,11 +539,12 @@ contains
     integer, intent(in)  :: KK
     integer, intent(out) :: ierr
     double precision :: w0(ne_), w1(ne_), w2(ne_)
-    double precision :: dotR(nlam_,nf_), dotP(nlam_,nf_), R(nf_), P(nf_)
+    double precision :: dotR(nlam_,nf_), dotP(nlam_,nf_), dotx(nlam_), doty(nlam_)
+    double precision :: R(nf_), P(nf_)
     complex(kind(0d0)) :: U(ne_,ne_), H(ne_,ne_), U1(ne_,ne_)
     complex(kind(0d0)) :: HeIJ(ne_,ne_), XkIJ(nf_,ne_,ne_)
     integer :: k, lam
-    double precision :: tmp
+    double precision :: dg, cc
 
     if(mode_(KK).ne.2) then
        MSG_ERR("mode_(KK).ne.2") 
@@ -485,7 +553,7 @@ contains
 
     ! -- solve Hamilton equation on the averaged path --    
     R(:) = R_(KK,1,:)
-    P(:) = P_(KK,1,:)    
+    P(:) = P_(KK,1,:)
     call calc_H_X(R(:), HeIJ(:,:), XkIJ(:,:,:), ierr); CHK_ERR(ierr)    
     do k = 1, nf_
        
@@ -509,18 +577,46 @@ contains
        call calc_H_X(R(:), HeIJ(:,:), XkIJ(:,:,:), ierr); CHK_ERR(ierr)
        call hamiltonian(HeIJ, XkIJ, P, H, ierr)
        call lapack_zheev(ne_, H, w2, U1, ierr); CHK_ERR(ierr)
-       if(abs(dot_product(U(:,1), U1(:,1))) < abs(dot_product(U(:,1), U1(:,2)))) then
-          write(0,*) "swap!"
-          tmp = w2(1)
-          w2(1) = w2(2)
-          w2(2) = tmp
-       end if
+!       if(abs(dot_product(U(:,1), U1(:,1))) < abs(dot_product(U(:,1), U1(:,2)))) then
+!          tmp = w2(1)
+!          w2(1) = w2(2)
+!          w2(2) = tmp
+!       end if
        R(k) = R(k) + dR_
        do lam = 1, nlam_ ! assume nnuc_(KK) == ne_
           dotP(lam,k) = -(w1(lam)-w2(lam))/(2*dR_)
        end do
     end do
+    
+    if(gauss_mode_.eq."thawed") then
+       dg = 2*real(g_(KK,1))*sum(R)*dR_/sum(R*R)  !dg.(R,R) = g.2(R,dR) => dg = 2g.(R,dR)/(R,R)
+       g_(KK,1) = g_(KK,1) + dg
+       call calc_H_X(R(:), HeIJ(:,:), XkIJ(:,:,:), ierr); CHK_ERR(ierr)
+       call hamiltonian(HeIJ, XkIJ, P, H, ierr); CHK_ERR(ierr)
+       call lapack_zheev(ne_, H, w1, U, ierr); CHK_ERR(ierr)
+       g_(KK,1) = g_(KK,1) - 2*dg
+       call calc_H_X(R(:), HeIJ(:,:), XkIJ(:,:,:), ierr); CHK_ERR(ierr)
+       call hamiltonian(HeIJ, XkIJ, P, H, ierr); CHK_ERR(ierr)
+       call lapack_zheev(ne_, H, w2, U, ierr); CHK_ERR(ierr)
+       g_(KK,1) = g_(KK,1) + dg
+       doty(:) = -4*real(g_(KK,1))**2*(w1(:)-w2(:))/(2*dg)
 
+       g_(KK,1) = g_(KK,1) + II*dg
+       call calc_H_X(R(:), HeIJ(:,:), XkIJ(:,:,:), ierr); CHK_ERR(ierr)
+       call hamiltonian(HeIJ, XkIJ, P, H, ierr); CHK_ERR(ierr)
+       call lapack_zheev(ne_, H, w1, U, ierr); CHK_ERR(ierr)
+       g_(KK,1) = g_(KK,1) - 2*II*dg
+       call calc_H_X(R(:), HeIJ(:,:), XkIJ(:,:,:), ierr); CHK_ERR(ierr)
+       call hamiltonian(HeIJ, XkIJ, P, H, ierr); CHK_ERR(ierr)
+       call lapack_zheev(ne_, H, w2, U, ierr); CHK_ERR(ierr)
+       g_(KK,1) = g_(KK,1) + II*dg
+       dotx(:) = +4*real(g_(KK,1))**2*(w1(:)-w2(:))/(2*dg)
+    else if(gauss_mode_.eq."frozen") then
+       dotx(:) = 0; doty(:) = 0
+    else
+       MSG_ERR("unsupported gauss_mode_"); ierr=1; return
+    end if
+    
     ! -- diag hamiltonian at averaged point --    
     R(:) = R_(KK,1,:)
     P(:) = P_(KK,1,:)
@@ -538,10 +634,13 @@ contains
 
     ! -- update R_lam,P_lam and <R>,<P> --
     do lam = 1, nlam_
+       glam_(KK,lam)   = glam_(KK,lam)   + (dotx(lam) + II*doty(lam))
        Rlam_(KK,lam,:) = Rlam_(KK,lam,:) + dotR(lam,:) * dydt_
        Plam_(KK,lam,:) = Plam_(KK,lam,:) + dotP(lam,:) * dydt_
-       R_(KK,1,:) = R_(KK,1,:) + abs(Clam_(KK,lam))**2 * dotR(lam,:)*dydt_
-       P_(KK,1,:) = P_(KK,1,:) + abs(Clam_(KK,lam))**2 * dotP(lam,:)*dydt_
+       cc = abs(Clam_(KK,lam))**2
+       g_(KK,1)   = g_(KK,1)   + cc * dydt_*(dotx(lam)+II*doty(lam))
+       R_(KK,1,:) = R_(KK,1,:) + cc * dydt_*dotR(lam,:)
+       P_(KK,1,:) = P_(KK,1,:) + cc * dydt_*dotP(lam,:)
     end do
     
     ! -- update C(t) by Hamiltonian at averaged point --

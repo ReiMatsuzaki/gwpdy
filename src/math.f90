@@ -3,6 +3,7 @@
 module Mod_math
   implicit none
 contains
+  ! ==== Linear Algebra ====
   function vmv(a, S, b) result(res)
     complex(kind(0d0)), intent(in) :: a(:), S(:,:), b(:)
     complex(kind(0d0)) res
@@ -154,7 +155,25 @@ contains
     res(:) = tmp(:,1)
     
   end subroutine lapack_zgesv_1
-  subroutine gtoint(maxn, z, res, ierr)    
+  subroutine intet_diag(n, H, dt, c, ierr)
+    use Mod_const, only : II
+    integer, intent(in) :: n
+    complex(kind(0d0)), intent(in) :: H(n,n)
+    double precision, intent(in) :: dt
+    complex(kind(0d0)), intent(inout) :: c(n)
+    integer, intent(out) :: ierr
+    double precision :: w(n)
+    complex(kind(0d0)) :: U(n,n), UH(n,n)
+
+    call lapack_zheev(n, H, w, U, ierr); CHK_ERR(ierr)
+    UH(:,:) = conjg(transpose(U(:,:)))
+    c(:)   = matmul(UH(:,:),    c(:))
+    c(:)   = exp(-II*w(:)*dt) * c(:)
+    c(:)   = matmul(U(:,:),     c(:))
+    
+  end subroutine intet_diag
+  ! ==== mathematical function ====
+  subroutine gtoint(maxn, z, res, ierr)
     ! gives the integrations :  { Int_0^oo x^{n}exp[-zx^2] dx | n=0,...,maxn}
     use Mod_const, only : pi
     integer, intent(in) :: maxn
@@ -193,4 +212,113 @@ contains
     end do
     
   end subroutine gtoint
+  ! ==== IO ====
+  subroutine ivec2csv(x, fn, ierr)
+    use Mod_sys, only : open_w
+    integer, intent(in) :: x(:)
+    character(*), intent(in) :: fn
+    integer, intent(out) :: ierr
+    integer, parameter :: ifile = 16231
+    integer i
+    
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)    
+    write(ifile, '("val")')
+    do i = 1, size(x, 1)
+       write(ifile,'(I0)') x(i)
+    end do
+    close(ifile)
+    
+  end subroutine ivec2csv
+  subroutine dten2csv(x, fn, ierr)
+    use Mod_sys, only : open_w
+    double precision, intent(in) :: x(:,:,:)
+    character(*), intent(in) :: fn
+    integer, intent(out) :: ierr
+    integer, parameter :: ifile = 16231
+    integer i, j, k
+    
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)    
+    write(ifile, '("i,j,k,val")')
+    do i = 1, size(x, 1)
+       do j = 1, size(x, 2)
+          do k = 1, size(x, 3)
+             write(ifile,'(I0,",",I0,",",I0,",",F20.10)') i,j,k,x(i,j,k)
+          end do
+       end do
+    end do
+    close(ifile)
+    
+  end subroutine dten2csv
+  subroutine cten2csv(x, fn, ierr)
+    use Mod_sys, only : open_w
+    complex(kind(0d0)), intent(in) :: x(:,:,:)
+    character(*), intent(in) :: fn
+    integer, intent(out) :: ierr
+    integer, parameter :: ifile = 16231
+    integer i, j, k
+    
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)    
+    write(ifile, '("i,j,k,re,im")')
+    do i = 1, size(x, 1)
+       do j = 1, size(x, 2)
+          do k = 1, size(x, 3)
+             write(ifile,'(I0,",",I0,",",I0,",",F20.10,F20.10)') i,j,k,real(x(i,j,k)),aimag(x(i,j,k))
+          end do
+       end do
+    end do
+    close(ifile)
+    
+  end subroutine cten2csv
+  subroutine dvec2csv(x, fn, ierr)
+    use Mod_sys, only : open_w
+    double precision, intent(in) :: x(:)
+    character(*), intent(in) :: fn
+    integer, intent(out) :: ierr
+    integer, parameter :: ifile = 16231
+    integer i
+    
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)    
+    write(ifile, '("i,val")')
+    do i = 1, size(x, 1)
+       write(ifile,'(I0,",",F20.10)') i,x(i)
+    end do
+    close(ifile)
+    
+  end subroutine dvec2csv
+  subroutine cvec2csv(x, fn, ierr)
+    use Mod_sys, only : open_w
+    complex(kind(0d0)), intent(in) :: x(:)
+    character(*), intent(in) :: fn
+    integer, intent(out) :: ierr
+    integer, parameter :: ifile = 16231
+    integer i
+    
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)    
+    write(ifile, '("i,re,im")')
+    do i = 1, size(x, 1)
+       write(ifile,'(I0,",",F20.10,F20.10)') i,real(x(i)),aimag(x(i))
+    end do
+    close(ifile)
+    
+  end subroutine cvec2csv
+  subroutine cmat2csv(x, fn, ierr)
+    use Mod_sys, only : open_w
+    complex(kind(0d0)), intent(in) :: x(:,:)
+    character(*), intent(in) :: fn
+    integer, intent(out) :: ierr
+    integer, parameter :: ifile = 16231
+    complex(kind(0d0)) y
+    integer i ,j
+    
+    call open_w(ifile, fn, ierr); CHK_ERR(ierr)    
+    write(ifile, '("i,j,re,im")')
+    do i = 1, size(x, 1)
+       do j = 1, size(x, 2)
+          y = x(i,j)
+          write(ifile,'(I0,",",I0,",",F20.10,F20.10)') i,j,real(y),aimag(y)
+       end do
+    end do
+    close(ifile)
+    
+  end subroutine cmat2csv
 end module Mod_math
