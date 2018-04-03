@@ -47,11 +47,12 @@ contains
   end subroutine UTestPWGTO_run
   subroutine test_run
     type(Obj_PWGTO) :: gwp
-    integer, parameter :: num = 3    
+    integer, parameter :: num = 3
+    integer, parameter :: nf = 1
     integer, parameter :: maxnd = 3
     integer, parameter :: numops = 1
     integer ierr
-    call PWGTO_new(gwp, num, maxnd, numops, ierr); CHK_ERR(ierr)
+    call PWGTO_new(gwp, num, nf, maxnd, numops, ierr); CHK_ERR(ierr)
     call PWGTO_setup(gwp, ierr);         CHK_ERR(ierr)
     call PWGTO_delete(gwp, ierr);        CHK_ERR(ierr)
   end subroutine test_run
@@ -108,7 +109,6 @@ contains
     integer, parameter :: n = 4
     integer, parameter :: numops = 1
     integer, parameter :: maxnd = 5
-    integer, parameter :: maxm  = 2
     complex(kind(0d0)) :: calc, ref
     complex(kind(0d0)) :: S(n,n)
     complex(kind(0d0)) :: gg(0:20)
@@ -116,7 +116,7 @@ contains
     integer ierr
     complex(kind(0d0)) gP, RP, eP
     
-    call PWGTO_new(g, n, maxnd, numops, ierr); CHK_ERR(ierr)
+    call PWGTO_new(g, n, 1, maxnd, numops, ierr); CHK_ERR(ierr)
     g%ns(1)=2; g%gs(1)=1.2d0;  g%Ps(1) = 10.0d0; g%Ps(1) = 1.0d0
     g%ns(2)=3; g%gs(2)=(0.9d0, -0.8d0); 
     g%ns(3)=4; g%gs(3)=1.0d0; g%Rs(3) = 0.1d0;
@@ -166,11 +166,11 @@ contains
     integer, parameter :: numops = 3
     complex(kind(0d0)) :: M1(n, n)
     complex(kind(0d0)) :: ref
-    integer A, ierr
+    integer A, B, ierr
     complex(kind(0d0)) :: gg(0:20)
     integer, parameter :: op0=1, op1=2, op2=3
     
-    call PWGTO_new(g, n, maxnd, numops, ierr)
+    call PWGTO_new(g, n, 1, maxnd, numops, ierr)
     g%ns(1)=0; g%gs(1)=1.1d0
     g%ns(2)=0; g%gs(2)=1.1d0; g%Rs(2) = 0.1d0
     g%ns(3)=2; g%gs(3)=1.1d0
@@ -180,33 +180,31 @@ contains
     g%ops_typ(op2) = "2"
     call PWGTO_setup(g, ierr)
        
-    A = 1
-    call gtoint(10, g%gs(A)*2, gg(:), ierr); CHK_ERR(ierr)
-    ref = gg(g%ns(A)*2) *abs(PWGTO_nterm(g,A))**2
+    A = 1; B = A
+    call gtoint(10, g%gs(A)+g%gs(B), gg(:), ierr); CHK_ERR(ierr)
+    ref = gg(g%ns(A)+g%ns(B)) *abs(PWGTO_nterm(g,A))**2
     call PWGTO_overlap(g, op0, op0, M1, ierr)    
-    EXPECT_EQ_C(ref, M1(A,A), ierr)
+    EXPECT_EQ_C(ref, M1(A,B), ierr)
 
-    ref = gg(g%ns(A)*2+1)*abs(PWGTO_nterm(g,A))**2
+    ref = gg(g%ns(A)+g%ns(B)+1)*abs(PWGTO_nterm(g,A))**2
     call PWGTO_overlap(g, op0, op1, M1, ierr)
-    EXPECT_EQ_C(ref, M1(A,A), ierr)
+    EXPECT_EQ_C(ref, M1(A,B), ierr)
     call PWGTO_overlap(g, op1, op0, M1, ierr)    
-    EXPECT_EQ_C(ref, M1(A,A), ierr)
+    EXPECT_EQ_C(ref, M1(A,B), ierr)
 
-    ref = gg(g%ns(A)*2+2)*abs(PWGTO_nterm(g,A))**2
+    ref = gg(g%ns(A)+g%ns(B)+2)*abs(PWGTO_nterm(g,A))**2
     call PWGTO_overlap(g, op1, op1, M1, ierr)    
     EXPECT_EQ_C(ref, M1(A,A), ierr)
     call PWGTO_overlap(g, op0, op2, M1, ierr)    
-    EXPECT_EQ_C(ref, M1(A,A), ierr)
+    EXPECT_EQ_C(ref, M1(A,B), ierr)
     call PWGTO_overlap(g, op2, op0, M1, ierr)    
-    EXPECT_EQ_C(ref, M1(A,A), ierr)
+    EXPECT_EQ_C(ref, M1(A,B), ierr)
  
-    !A = 2
-    !m = 1
-    !call gtoint(20, g%gs(A)*2, gg(:), ierr); CHK_ERR(ierr)
-    !call PWGTO_overlap(g, op0, op1, M1, ierr)
-    !calc = M1(A,A) / (abs(PWGTO_nterm(g,A))**2)
-    !ref = g%Rs(A) * gg(g%ns(A)*2)
-    !EXPECT_EQ_C(ref, calc, ierr)
+    A = 2
+    call gtoint(20, g%gs(A)+g%gs(B)+1, gg(:), ierr); CHK_ERR(ierr)
+    call PWGTO_overlap(g, op0, op1, M1, ierr)
+    ref = g%Rs(A) * gg(g%ns(A)*2) * (abs(PWGTO_nterm(g,A))**2)
+    EXPECT_EQ_C(ref, M1(A,B), ierr)
 
   end subroutine test_multipole_0
   subroutine test_kinetic
@@ -223,7 +221,7 @@ contains
     ! <d/dx(xExp[]) | d/dx(xExp[])> = <0> +4zz(4) -4z<2> + p2<2>
     ! <d/dx(Exp[])  | d/dx(xExp[])> = -ip<0> +2ipz<2> -2izp<2>
     
-    type(Obj_PWGTO) :: g
+    type(Obj_PWGTO) :: g    
     integer, parameter :: n=4, maxnd=3, numops=2
     complex(kind(0d0)) :: calc, ref, z, zz, cz
     complex(kind(0d0)) :: T(n, n)
@@ -238,7 +236,7 @@ contains
     pA = 0.1d0
     pB = 0.2d0
 
-    call PWGTO_new(g, n, maxnd, numops, ierr)
+    call PWGTO_new(g, n, 1, maxnd, numops, ierr)
     g % ns(1) = 0; g % gs(1) = z; g % Rs(1) = 0.1d0
     g % ns(2) = 1; g % gs(2) = z; g % Rs(2) = 0.1d0
     g % ns(3) = 0; g % gs(3) = z; g % Ps(3) = pA;    g % Rs(3) = 0.2d0

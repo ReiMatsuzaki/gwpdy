@@ -134,7 +134,7 @@ contains
   end subroutine DyQPBranch_delete
   ! ==== calc ====
   subroutine update_set(calc_H_X, KK, ierr)
-    use Mod_PWGTO
+    use Mod_PWGTO2
     use Mod_const, only : II
     use Mod_Math, only : intet_diag
     interface
@@ -216,7 +216,7 @@ contains
     
   end subroutine update_set
   subroutine update_vp(calc_H_X, KK, ierr)
-    use Mod_PWGTO
+    use Mod_PWGTO2
     use Mod_const, only : II
     use Mod_Math, only : intet_diag
     interface
@@ -228,6 +228,14 @@ contains
     end interface
     integer, intent(in) :: KK
     integer, intent(out) :: ierr
+    complex(kind(0d0)) :: HeIJ(ne_,ne_), XkIJ(1,ne_,ne_)
+    integer :: numvar, i, j, Ie, Je
+    integer, allocatable :: ivars(:), iop0
+    double precision :: X(:,:), y(:)
+    complex(kind(0d0)) :: tmp, S(nnuc_(KK), nnuc_(KK)), Si0(nnuc_(KK), nnuc_(KK)), S0j(nnuc_(KK), nnuc_(KK)), Sij(nnuc_(KK), nnuc_(KK)), P2(nnuc_(KK), nnuc_(KK)), P1(nnuc_(KK), nnuc_(KK)), H00(nnuc_(KK), nnuc_(KK)), Hi0(nnuc_(KK), nnuc_(KK))
+    complex(kind(0d0)), allocatable :: v1(:), v2(:)
+    type(Obj_PWGTO) :: nbasis
+    double precision HeIJs(nnuc_(KK),ne_,ne_), XkIJs(nnuc_(KK),nf_,ne_,ne_)
     
     ierr = 0
     if(gauss_mode_.eq."thawed") then
@@ -236,6 +244,53 @@ contains
     if(nf_.ne.1) then
        MSG_ERR("not impl"); ierr = 1; return
     end if
+
+    numvar = 2
+    allocate(iops(numvar), X(numvar,numvar), y(numvar), v(nnuc_(KK)))
+    iop0 = 3
+    iopP2= 4
+    iopP1 = 5
+    call make_nbasis((/"dR ", "dP ", "0  ", "P2 ", "P1 "/, 1, KK, mbasis, ierr)
+    CHK_ERR(ierr)
+
+    do A = 1, nnuc_(KK)
+       call calc_H_X(R_(KK,:), HeIJs(KK,:,:), XkIJs(KK,:,:,:), ierr)
+       CHK_ERR(ierr)
+    end do
+
+    call PWGTO_overlap(nbasis, iop0, iop0,  S00, ierr);CHK_ERR(ierr)
+    call PWGTO_overlap(nbasis, iop0, iopP1, P1,  ierr);CHK_ERR(ierr)
+    call PWGTO_overlap(nbasis, iop0, iopP2, P2,  ierr);CHK_ERR(ierr)
+    
+    do i = 1, numvar
+       call PWGTO_overlap(nbasis, i, iop0, Si0, ierr); CHK_ERR(ierr)
+       do j = 1, numvar                    
+          call PWGTO_overlap(nbasis, iop0, j, S0j, ierr); CHK_ERR(ierr)
+          call PWGTO_overlap(nbasis, i,    j, Sij, ierr); CHK_ERR(ierr)
+          tmp = 0
+          do Je = 1, ne_
+             v(:) = matmul(S0j, cs_(KK,:,Je))
+             call lapack_zgesv_1(nnuc_(KK), S00(:,:), v(:), ierr)
+             v(:) = matmul(Si0, v(:))
+             tmp = tmp + dot_product(cs_(KK,:,Je), v(:))
+             tmp = tmp + dot_product(cs_(KK,:,Je), matmul(Sij(:,:), cs_(KK,:,Je))
+          end do
+          X(i,j) = -aimag(tmp)
+       end do
+
+       do Ie = 1, ne_
+          do Je = 1, ne_
+             
+             do A = 1, nnuc_(KK)
+                do B = 1, nnuc_(KK)
+                   H00(A,B) = (1/(2*m_))*matmul(P2(A,B) &
+                        -II/m_* (XkIJs(,1,Ie,Je))/2 *matmul(P1(:,:), cs_(KK,:,Je))
+                   v(:) = cs_(KK,:,Je))
+                end do
+             end do
+          end do
+       end do
+    end do
     
   end subroutine update_vp
   ! ==== IO ====
@@ -318,47 +373,30 @@ contains
     write(*,*) "========================="
   end subroutine print_status
   ! ==== utils ====
-  subroutine make_nbasis(mode, KK, res, ierr)
-    use Mod_PWGTO
-    character(*), intent(in) :: mode
+  subroutine make_nbasis(ops_typ, maxnd, KK, res, ierr)
+    use Mod_PWGTO2
+    character(3), intent(in) :: ops_typ(:)
+    integer, intent(in) :: maxnd
     type(Obj_PWGTO) :: res
     integer, intent(out) :: ierr
-    integer, parameter :: maxnd=2
-    integer numNCs
     integer KK, A
 
     ierr = 0
-    if(mode.eq."0") then
-       numNCs = 1
-    else if(mode.eq."0RP") then
-       numNCs = 3
-    else
-       MSG_ERR("unsupported")
-       ierr = 1; return
-    end if
-
-    if(KK.eq.0) then
-       MSG_ERR("KK==0 is not impl")
-       ierr = 1 ; return
-    end if
-
     if(nnuc_(KK).eq.0) then
        MSG_ERR("nnuc_(KK)==0")
        write(0,*) "KK:", KK
        ierr = 1; return
     end if
     
-    call PWGTO_new(res, nnuc_(KK), numNCs, maxnd, ierr); CHK_ERR(ierr)
+    call PWGTO_new(res, nnuc_(KK), size(ops_typ), maxnd, ierr)
+    CHK_ERR(ierr)
     do A = 1, nnuc_(KK)
        res%gs(A)     = g_(KK,A)
        res%Rs(A)     = R_(KK,A,1)
        res%Ps(A)     = P_(KK,A,1)
+       res%ops_typ(A)= ops_typ(A)
        res%thetas(A) = 0
     end do
-    if(mode.eq."0RP") then
-       res%typ(2) = "dR"
-       res%typ(3) = "dP"
-    end if
     call PWGTO_setup(res, ierr); CHK_ERR(ierr)
     
   end subroutine make_nbasis
@@ -386,7 +424,7 @@ contains
     
   end subroutine hamiltonian
   subroutine calc_norm2_path(KK, res, ierr)
-    use Mod_PWGTO
+    use Mod_PWGTO2
     integer, intent(in) :: KK
     double precision, intent(out) :: res
     integer, intent(out) :: ierr
@@ -395,7 +433,7 @@ contains
     integer I, nn
     ierr = 0
     nn = nnuc_(KK)    
-    call make_nbasis("0", KK, nbasis, ierr); CHK_ERR(ierr)
+    call make_nbasis((/"0  "/), 1, KK, nbasis, ierr); CHK_ERR(ierr)
     call PWGTO_overlap(nbasis, 1, 1, S(:,:), ierr); CHK_ERR(ierr)
     call PWGTO_delete(nbasis, ierr)
     res = 0
@@ -405,7 +443,7 @@ contains
     
   end subroutine calc_norm2_path
   subroutine calc_probe(res, ierr)
-    use Mod_PWGTO
+    use Mod_PWGTO2
     double precision, intent(out) :: res(:)
     integer, intent(out) :: ierr
     integer KK

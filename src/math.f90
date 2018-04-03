@@ -137,11 +137,10 @@ contains
     call ZGESV(n, n, AA, n, ipiv, res, n, info)
     
   end subroutine lapack_zgesv
-  subroutine lapack_zgesv_1(n, A, x, res, ierr)
+  subroutine lapack_zgesv_1(n, A, res, ierr)
     integer, intent(in) :: n
     complex(kind(0d0)), intent(in) :: A(:,:)    
-    complex(kind(0d0)), intent(in) :: X(:)
-    complex(kind(0d0)), intent(out) :: res(:)
+    complex(kind(0d0)), intent(inout) :: res(:)
     integer, intent(out) :: ierr
     integer info, ipiv(n)
     complex(kind(0d0)) :: AA(n,n)
@@ -149,8 +148,7 @@ contains
 
     ierr = 0
     AA(:,:) = A(:,:)
-    tmp(:,1) = x(:)
-
+    tmp(:,1) = res(:)
     call ZGESV(n, 1, AA, n, ipiv, tmp, n, info)
     res(:) = tmp(:,1)
     

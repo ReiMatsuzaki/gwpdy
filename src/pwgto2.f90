@@ -1,9 +1,25 @@
 #include "macros.fpp"
 module Mod_PWGTO2
+  ! see 2018/3/30/qpbranch
   ! Plane Wave Gauss Type Orbital
-  !   G^k_i(Q) = sum_j c_kji(Q-Ri)^{nkji} exp[-g(Q-Ri)^2 + iPi(Q-Ri)]
-  ! the term 'op' express operator which works to GA as follow
-  !   O.GA = sum_i Ci Q^{ni} GA
+  !   GA(Q) = CA (Q-RA)^nA Exp[-gA(Q-RA)^2 + iPA(Q-RA)].
+  ! The module also express the operators OPi operating G_A.
+  !   OPi.GA = sum_j CjiA (Q-RA)^{njiA} Exp[-gA(Q-RA)^2 + i PA(Q-RA)]
+  ! Following matrix can be calcualted
+  !   { <OPi.GA|OPj.GB> | A,B=1,num}.
+  ! Matrix elements are avaluated using ??? method. see Tachikawa(2008).
+  ! Hermitian polynomial \Lambda(Q-R;gP) is defined as    
+  !   \Lambda_{A,B,N}(Q-R) = Exp[gP(Q-R)^2] (d/dRAB)^N Exp[-gp(Q-RAB)^2]
+  !   (Q-RA)^nA (Q-RB)^nB = sum_{N=0}^{nA+nB} d(nA,nB,N) \Lambda_{A,B,N}(Q-RAB)
+  ! where
+  !   RAB = (gA.RA+gB.RB)/(gA+gB)
+  ! matrix elements of f are evaluated as
+  !      <gA|f|gB> = Int[ eAB f(Q) (Q-RA)^nA (Q-RB)^nB Exp[-gAB (Q-RAB)^2]
+  !                = eAB \sum_{N=0}^{nA+nB} d_N^{nA,nB} Int[f(Q)\Lambda_{A,B,N}(Q_RAB)Exp[-gAB (Q-RAB)^2]
+  !                = eAB \sum_{N=0}^{nA+nB} [f]_N
+  !      [f]_N     = d_N^{nA,nB} (d/dRAB)^N Int[f(Q)Exp[-gAB (Q-RAB)^2]]
+  ! hermite_coef_d : gives d(nA,nB,N)
+  ! hermite_1drm   : gives [r^m]_N
   implicit none
   type Obj_PWGTO
      ! - data size -
@@ -13,30 +29,34 @@ module Mod_PWGTO2
      complex(kind(0d0)), allocatable :: gs(:) 
      double precision,   allocatable :: Rs(:), Ps(:), thetas(:)
      character(3), allocatable :: ops_typ(:)  ! dR, dP, P, P2
+     ! - operator data -
+     integer, allocatable :: ops_num(:,:)  ! op_num(opi,A)
+     integer, allocatable :: ops_ns(:,:,:) ! op_ns( opi,A,:)
+     complex(kind(0d0)), allocatable :: ops_cs(:,:,:) ! cs(opi,A,:)
      ! - intermediate -
-     complex(kind(0d0)), allocatable :: nts(:) ! normalization term
-     integer, allocatable :: ops_num(:,:)  ! op_num(o,A)   number of nth polynomial
-     integer, allocatable :: ops_ns(:,:,:) ! op_ns( o,A,:) powers of nth polynomial
-     complex(kind(0d0)), allocatable :: ops_cs(:,:,:) ! cs(o,A,:) : coeff of nth poly
      complex(kind(0d0)), allocatable :: gAB(:,:), RAB(:,:), eAB(:,:), hAB(:,:)
-     complex(kind(0d0)), allocatable :: d(:,:,:,:,:) ! d(A,B,0:maxnd,0:maxnd,0:maxnd*2)
+     complex(kind(0d0)), allocatable :: d(:,:,:,:,:) ! d(A,B,nA,nB,N)
   end type Obj_PWGTO
 contains
   ! -- main --
-  subroutine PWGTO_new(this, num, maxnd, numops, ierr)
+  subroutine PWGTO_new(this, num, nf, maxnd, numops, ierr)
     type(Obj_PWGTO) :: this
-    integer, intent(in) :: num, numops, maxnd
+    integer, intent(in) :: num, nf, numops, maxnd
     integer, intent(out) :: ierr
 
-    ierr = 0
-    this%num    = num
-    this%numops = numops
+    ierr = 0    
+    if(nf.ne.1) then
+       MSG_ERR("Unsupported")
+       ierr = 1; return
+    end if
+    
+    this%num= num
+    this%nf = nf
     this%maxnd  = maxnd
+    this%numops = numops
+    
     allocate(this%ns(num))
     allocate(this%gs(num), this%Rs(num), this%Ps(num), this%thetas(num))
-    allocate(this%gAB(num,num), this%RAB(num,num), this%eAB(num,num))
-    allocate(this%hAB(num,num))
-    allocate(this%d(num,num,0:maxnd,0:maxnd,0:2*maxnd))
     this%ns = 0
     this%gs = (1.0d0, 0.0d0)
     this%Rs = 0.0d0
@@ -44,10 +64,14 @@ contains
     this%thetas = 0.0d0
     
     allocate(this%ops_typ(numops))
-    this%ops_typ = "0"
     allocate(this%ops_num(numops, num))
     allocate(this%ops_ns(numops,  num, 5))
     allocate(this%ops_cs(numops,  num, 5))
+    this%ops_typ = "0"
+
+    allocate(this%gAB(num,num), this%RAB(num,num), this%eAB(num,num))
+    allocate(this%hAB(num,num))
+    allocate(this%d(num,num,0:maxnd,0:maxnd,0:2*maxnd))
     
   end subroutine PWGTO_new
   subroutine PWGTO_setup(this, ierr)
@@ -69,7 +93,7 @@ contains
 
     ierr = 0
     
-    ! -- normalization term --
+    ! -- normalization term and operation --
     allocate(gg(0:maxval(this%ns(:))*2+2))
     do A = 1, this%num
        nA = this%ns(A)
@@ -197,10 +221,20 @@ contains
     deallocate(this%ns, this%gs, this%Rs, this%Ps, this%thetas)
     deallocate(this%ops_typ)
     deallocate(this%ops_num, this%ops_ns, this%ops_cs)
-    deallocate(this%gAB, this%RAB, this%eAB, this%hAB)
+    deallocate(this%gAB, this%RAB, this%eAB, this%hAB, this%d)
   end subroutine PWGTO_delete
   ! -- calc  --  
   subroutine PWGTO_overlap(this,   ibra, iket, res, ierr)
+    ! compute overlap.
+    !
+    ! Inputs
+    ! ------
+    !  ibra : integer : index of operator for bra
+    !  iket : integer : index of operator for ket
+    !
+    ! Returns
+    ! -------
+    !  res : [[complex]] : resultant matrix
     type(Obj_PWGTO), intent(in) :: this
     integer, intent(in) :: ibra, iket
     complex(kind(0d0)), intent(out) :: res(:,:)
@@ -217,15 +251,16 @@ contains
                 nAi = this%ops_ns(ibra, A, i)
                 nBj = this%ops_ns(iket, B, j)
                 acc = acc + conjg(this%ops_cs(ibra,A,i))*this%ops_cs(iket,B,j) &
-                     * this%d(A,B,nAi,nBj,0) * this%hAB(A,B)
+                     * this%d(A,B,nAi,nBj,0) 
              end do
           end do
-          res(A,B) = acc * this%eAB(A,B)
+          res(A,B) = acc * this%eAB(A,B) * this%hAB(A,B)
        end do       
     end do
   end subroutine PWGTO_overlap
   ! -- utils --
   subroutine check_matrix(this, M, ierr)
+    ! check the matrix size and raise error if it does not fit basis size.
     type(Obj_PWGTO), intent(in) :: this
     complex(kind(0d0)), intent(in) :: M(:,:)
     integer, intent(out) :: ierr
@@ -238,27 +273,13 @@ contains
     
   end subroutine check_matrix
   function PWGTO_nterm(this,A) result(res)
+    ! gives normalization term of A th basis.
     type(Obj_PWGTO) :: this
     integer, intent(in) :: A
     complex(kind(0d0)) :: res
     res = this%ops_cs(1,A,1)
   end function PWGTO_nterm
   ! -- calc matrix element --
-  ! see Tachikawa(2008)
-  ! Hermitian polynomial \Lambda(Q-R;gP) is defined as    
-  !      \Lambda_{A,B,N}(Q-R) = Exp[gP(Q-R)^2] (d/dR_{AB})^N Exp[-gp(Q-R)^2]
-  !      (Q-RA)^{nA}(Q-RB)^{nB} = sum_{N=0}^{nA+nB} d_N^{nA,NB} \Lambda_{A,B,N}(Q-R_{AB})
-  ! where
-  !      R = (gA.RA+gB.RB)/(gA+gB)
-  ! matrix elements of f are evaluated as
-  !      <gA|f|gB> = Int[ eAB f(Q) (Q-RA)^nA (Q-RB)^nB Exp[-gAB (Q-RAB)^2]
-  !                = eAB \sum_{N=0}^{nA+nB} d_N^{nA,nB} Int[f(Q)\Lambda_{A,B,N}(Q_RAB)Exp[-gAB (Q-RAB)^2]
-  !                = eAB \sum_{N=0}^{nA+nB} [f]_N
-  !      [f]_N     = d_N^{nA,nB} (d/dRAB)^N Int[f(Q)Exp[-gAB (Q-RAB)^2]]
-  !
-  ! hermite_coef_d : gives d(nA,nB,N)
-  ! hermite_1drm   : gives [r^m]_N
-  !
   subroutine prod_gauss(gA, RA, PA, tA, gB, RB, PB, tB, gP, RP, eP)    
     ! compute gauss parameter of product conjg(GA).GB
     use Mod_const, only : II
