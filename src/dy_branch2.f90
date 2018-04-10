@@ -604,22 +604,6 @@ contains
     c(:)   = matmul(U(:,:),        c(:))
     
   end subroutine intet_diag
-  subroutine intet_gdiag(n, S, H, c, ierr)
-    use Mod_const, only : II
-    use Mod_math, only  : lapack_zggev_shift, vmv
-    integer, intent(in) :: n
-    complex(kind(0d0)), intent(in) :: S(n,n), H(n,n)
-    complex(kind(0d0)), intent(inout) :: c(n)
-    integer, intent(out) :: ierr
-    complex(kind(0d0)) :: w(n)
-    complex(kind(0d0)) :: UL(n,n), UR(n,n)
-
-    call lapack_zggev_shift(n, H, S, H(1,1), w, UL, UR, ierr); CHK_ERR(ierr)
-    c(:) = matmul(transpose(UL), matmul(S,c))
-    c(:) = exp(-II*w(:)*dydt_) * c(:)
-    c(:) = matmul(UR(:,:),       c(:))
-    
-  end subroutine intet_gdiag
   subroutine calc_probe(res, ierr)
     ! compute probability to find electronic state I
     use Mod_PWGTO

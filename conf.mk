@@ -1,6 +1,6 @@
 # -- Directories --
-SRC=${PROJ_ROOT}/src
-BUILD=${PROJ_ROOT}/build
+SRC=${GWPDY_ROOT}/src
+BUILD=${GWPDY_ROOT}/build
 VPATH=${BUILD}:${SRC}
 
 # -- Common --

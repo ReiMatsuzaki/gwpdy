@@ -1,3 +1,4 @@
+! gwpdy/src/math.f90
 #include "macros.fpp"
 
 module Mod_math
@@ -170,7 +171,52 @@ contains
     c(:)   = matmul(U(:,:),     c(:))
     
   end subroutine intet_diag
-  ! ==== mathematical function ====
+  subroutine intet_gdiag(n, S, H, dt, c, ierr)
+    use Mod_const, only : II
+    integer, intent(in) :: n
+    complex(kind(0d0)), intent(in) :: S(n,n), H(n,n)
+    double precision, intent(in) :: dt
+    complex(kind(0d0)), intent(inout) :: c(n)
+    integer, intent(out) :: ierr
+    complex(kind(0d0)) :: w(n)
+    complex(kind(0d0)) :: UL(n,n), UR(n,n)
+
+    call lapack_zggev_shift(n, H, S, H(1,1), w, UL, UR, ierr); CHK_ERR(ierr)
+    c(:) = matmul(transpose(UL), matmul(S,c))
+    c(:) = exp(-II*w(:)*dt) * c(:)
+    c(:) = matmul(UR(:,:), c(:))
+    
+  end subroutine intet_gdiag
+  ! ==== mathematical function ====  
+  subroutine dfact(maxn, res, ierr)
+    ! gives double factorial
+    integer, intent(in) :: maxn
+    integer, intent(out) :: res(0:maxn)
+    integer, intent(out) :: ierr
+    integer n
+    ierr = 0
+    res(0) = 1
+    res(1) = 1
+    do n = 2, maxn
+       res(n) = n*res(n-2)
+    end do
+  end subroutine dfact
+  subroutine gamma_half_int(maxn, res, ierr)
+    ! gives {Gamma(n+1/2) | n = 0,...,maxn}
+    use Mod_const, only : PI
+    integer, intent(in) :: maxn
+    double precision, intent(out) :: res(0:maxn)
+    integer, intent(out) :: ierr
+    integer n
+    
+    ierr = 0
+    res(0) = sqrt(PI)
+    do n = 0, maxn-1
+       ! Gamma(n+1+1/2) = (n+1/2)Gamma(n+1/2)
+       res(n+1) = (n+0.5d0) * res(n)
+    end do
+    
+  end subroutine gamma_half_int
   subroutine gtoint(maxn, z, res, ierr)
     ! gives the integrations :  { Int_0^oo x^{n}exp[-zx^2] dx | n=0,...,maxn}
     use Mod_const, only : pi

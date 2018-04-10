@@ -1,25 +1,28 @@
-#include "macros.fpp"
+! gwpdy/src/pwgto2.f90
+!
+! Plane Wave Gauss Type Orbital
+!   GA(Q) = CA (Q-RA)^nA Exp[-gA(Q-RA)^2 + iPA(Q-RA)].
+! The module also express the operators OPi operating G_A.
+!   OPi.GA = sum_j CjiA (Q-RA)^{njiA} Exp[-gA(Q-RA)^2 + i PA(Q-RA)]
+! Following matrix can be calcualted
+!   { <OPi.GA|OPj.GB> | A,B=1,num}.
+! Matrix elements are avaluated using ??? method. see Tachikawa(2008).
+! Hermitian polynomial \Lambda(Q-R;gP) is defined as    
+!   \Lambda_{A,B,N}(Q-R) = Exp[gP(Q-R)^2] (d/dRAB)^N Exp[-gp(Q-RAB)^2]
+!   (Q-RA)^nA (Q-RB)^nB = sum_{N=0}^{nA+nB} d(nA,nB,N) \Lambda_{A,B,N}(Q-RAB)
+! where
+!   RAB = (gA.RA+gB.RB)/(gA+gB)
+! matrix elements of f are evaluated as
+!      <gA|f|gB> = Int[ eAB f(Q) (Q-RA)^nA (Q-RB)^nB Exp[-gAB (Q-RAB)^2]
+!                = eAB \sum_{N=0}^{nA+nB} d_N^{nA,nB} Int[f(Q)\Lambda_{A,B,N}(Q_RAB)Exp[-gAB (Q-RAB)^2]
+!                = eAB \sum_{N=0}^{nA+nB} [f]_N
+!      [f]_N     = d_N^{nA,nB} (d/dRAB)^N Int[f(Q)Exp[-gAB (Q-RAB)^2]]
+! hermite_coef_d : gives d(nA,nB,N)
+! hermite_1drm   : gives [r^m]_N
+!
+! see 2018/3/30/qpbranch
+#include "macros.fpp"  
 module Mod_PWGTO2
-  ! see 2018/3/30/qpbranch
-  ! Plane Wave Gauss Type Orbital
-  !   GA(Q) = CA (Q-RA)^nA Exp[-gA(Q-RA)^2 + iPA(Q-RA)].
-  ! The module also express the operators OPi operating G_A.
-  !   OPi.GA = sum_j CjiA (Q-RA)^{njiA} Exp[-gA(Q-RA)^2 + i PA(Q-RA)]
-  ! Following matrix can be calcualted
-  !   { <OPi.GA|OPj.GB> | A,B=1,num}.
-  ! Matrix elements are avaluated using ??? method. see Tachikawa(2008).
-  ! Hermitian polynomial \Lambda(Q-R;gP) is defined as    
-  !   \Lambda_{A,B,N}(Q-R) = Exp[gP(Q-R)^2] (d/dRAB)^N Exp[-gp(Q-RAB)^2]
-  !   (Q-RA)^nA (Q-RB)^nB = sum_{N=0}^{nA+nB} d(nA,nB,N) \Lambda_{A,B,N}(Q-RAB)
-  ! where
-  !   RAB = (gA.RA+gB.RB)/(gA+gB)
-  ! matrix elements of f are evaluated as
-  !      <gA|f|gB> = Int[ eAB f(Q) (Q-RA)^nA (Q-RB)^nB Exp[-gAB (Q-RAB)^2]
-  !                = eAB \sum_{N=0}^{nA+nB} d_N^{nA,nB} Int[f(Q)\Lambda_{A,B,N}(Q_RAB)Exp[-gAB (Q-RAB)^2]
-  !                = eAB \sum_{N=0}^{nA+nB} [f]_N
-  !      [f]_N     = d_N^{nA,nB} (d/dRAB)^N Int[f(Q)Exp[-gAB (Q-RAB)^2]]
-  ! hermite_coef_d : gives d(nA,nB,N)
-  ! hermite_1drm   : gives [r^m]_N
   implicit none
   type Obj_PWGTO
      ! - data size -
@@ -165,7 +168,7 @@ contains
              this%ops_ns(iop,A, 2) = nA
              this%ops_cs(iop,A, 2) = -II*this%Ps(A)*nt
              if(nA .ne. 0) then
-                this%ops_cs(iop,A, 3) = nA*nt
+                this%ops_cs(iop,A, 3) = -nA*nt
                 this%ops_ns(iop,A, 3) = nA-1
              end if
           case("dP")
@@ -223,7 +226,40 @@ contains
     deallocate(this%ops_num, this%ops_ns, this%ops_cs)
     deallocate(this%gAB, this%RAB, this%eAB, this%hAB, this%d)
   end subroutine PWGTO_delete
-  ! -- calc  --  
+  ! -- calc  --
+  subroutine calc_nterm(ndiff, n, gr, res, ierr)
+    ! give difference of normalization term
+    !   (d/d(Re[g]))^(nd)N(t)
+    ! where
+    !   N(t) = 1/sqrt(S)
+    !   S = Int_{-oo}^{+oo} x^{2n} exp[-2Re[g]x^2] dx.
+    ! overlap S can be expressed by Gamma function
+    !   S = (2Re[g])^{-n-1/2} Gamma[n+1/2]
+    ! So, normalization term N becomes
+    !   N = (2Re[g])^{n/2+1/4} Sqrt(1/Gamma[n+1/2])
+    use Mod_const, only : PI
+    use Mod_math, only : gamma_half_int
+    integer, intent(in) :: ndiff, n
+    double precision, intent(in) :: gr
+    double precision, intent(out) :: res
+    integer, intent(out) :: ierr
+    double precision  ga(0:n)
+    double precision nn, c
+    
+    ierr = 0
+    call gamma_half_int(n, ga, ierr); CHK_ERR(ierr)
+    nn = n*0.5d0+0.25d0
+    c  = 2**nn * sqrt(1/ga(n))
+    select case(ndiff)
+    case(0)
+       res = gr**nn * c
+    case(1)
+       res = nn*gr**(nn-1) * c
+    case default
+       MSG_ERR("invalid value: ndiff")
+       ierr = 1; return
+    end select
+  end subroutine calc_nterm
   subroutine PWGTO_overlap(this,   ibra, iket, res, ierr)
     ! compute overlap.
     !
@@ -258,6 +294,48 @@ contains
        end do       
     end do
   end subroutine PWGTO_overlap
+  subroutine PWGTO_at(this, iop, cs, xs, res, ierr)
+    use Mod_const, only : II
+    type(Obj_PWGTO) :: this
+    integer, intent(in) :: iop
+    complex(kind(0d0)), intent(in) :: cs(:)
+    double precision, intent(in) :: xs(:)
+    complex(kind(0d0)), intent(out) :: res(:)
+    integer, intent(out) :: ierr
+    integer ix, i, A
+    double precision d
+    complex(kind(0d0)) tmp
+    
+    ierr = 0
+    if(iop<1.or.this%numops<iop) then
+       MSG_ERR("invalid iop")
+       ierr = 1; return
+    end if
+    if(size(cs)<this%num) then
+       MSG_ERR("size(cs)<num")
+       ierr = 1; return
+    end if
+    if(size(xs).ne.size(res)) then
+       MSG_ERR("size(xs)<size(res)")
+       ierr = 1; return
+    end if
+
+    res(:) = 0
+    do ix = 1, size(xs)
+       tmp = 0
+       do A = 1, this%num
+          d = xs(ix)-this%Rs(A)
+          do i = 1, this%ops_num(iop, A)
+             tmp = tmp + cs(A)*this%ops_cs(iop,A,i) * d**this%ops_ns(iop,A,i) * &
+                  exp(-this%gs(A)*d**2 + II*this%Ps(A)*d)
+          end do
+       end do
+       if(abs(tmp) > 1.0d-14) then
+          res(ix) = tmp
+       end if
+    end do
+    
+  end subroutine PWGTO_at
   ! -- utils --
   subroutine check_matrix(this, M, ierr)
     ! check the matrix size and raise error if it does not fit basis size.
@@ -276,11 +354,11 @@ contains
     ! gives normalization term of A th basis.
     type(Obj_PWGTO) :: this
     integer, intent(in) :: A
-    complex(kind(0d0)) :: res
-    res = this%ops_cs(1,A,1)
+    double precision :: res
+    res = real(this%ops_cs(1,A,1))
   end function PWGTO_nterm
   ! -- calc matrix element --
-  subroutine prod_gauss(gA, RA, PA, tA, gB, RB, PB, tB, gP, RP, eP)    
+  subroutine prod_gauss(gA, RA, PA, tA, gB, RB, PB, tB, gP, RP, eP)
     ! compute gauss parameter of product conjg(GA).GB
     use Mod_const, only : II
     complex(kind(0d0)), intent(in) :: gA, gB

@@ -17,6 +17,14 @@ contains
     call Timer_begin(timer, "lapack_zggev", ierr)
     call test_zggev(ierr)
     call Timer_end(timer, "lapack_zggev", ierr)
+
+    call Timer_begin(timer, "dfact", ierr)
+    call test_zggev(ierr)
+    call Timer_end(timer, "dfact", ierr)
+
+    call Timer_begin(timer, "gamma", ierr)
+    call test_gamma(ierr)
+    call Timer_end(timer, "gamma", ierr)
     
     write(*,*)
     write(*,*) "UTestMath end"
@@ -80,6 +88,33 @@ contains
     ! (  0.0000000000000000     ,  1.8379742171768383E-013) (  1.0000000000000002     ,  0.0000000000000000     )
      
   end subroutine test_zggev
+  subroutine test_dfact(ierr)
+    use Mod_math, only : dfact
+    integer, intent(out) :: ierr
+    integer, parameter :: maxn = 7
+    integer :: npp(0:maxn)
+    call dfact(maxn, npp(:), ierr); CHK_ERR(ierr)
+    EXPECT_EQ_I(1, npp(0), ierr)
+    EXPECT_EQ_I(1, npp(1), ierr)
+    EXPECT_EQ_I(1*2, npp(2), ierr)
+    EXPECT_EQ_I(1*3, npp(3), ierr)
+    EXPECT_EQ_I(1*2*4, npp(4), ierr)
+    EXPECT_EQ_I(1*3*5, npp(5), ierr)
+    EXPECT_EQ_I(1*2*4*6, npp(6), ierr)
+    EXPECT_EQ_I(1*3*5*7, npp(7), ierr)
+  end subroutine test_dfact
+  subroutine test_gamma(ierr)
+    use Mod_const, only : PI
+    use Mod_math, only : gamma_half_int
+    integer, intent(out) :: ierr
+    integer, parameter :: nmax=5
+    double precision  :: g(0:nmax)
+    call gamma_half_int(nmax, g, ierr); CHK_ERR(ierr)
+    EXPECT_EQ_D(sqrt(PI), g(0), ierr)
+    EXPECT_EQ_D(sqrt(PI)/2, g(1), ierr)
+    EXPECT_EQ_D(sqrt(PI)*3.0d0/4, g(2), ierr)
+    EXPECT_EQ_D(sqrt(PI)*15.0d0/8, g(3), ierr)
+  end subroutine test_gamma
 end module Mod_UTestMath
 
 program main
