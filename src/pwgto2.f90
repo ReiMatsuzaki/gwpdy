@@ -92,6 +92,7 @@ contains
     integer :: A, nA, iop
     complex(kind(0d0)) :: gA, nt
     complex(kind(0d0)), allocatable :: gg(:)
+    double precision tmp
     double precision pA
 
     ierr = 0
@@ -101,12 +102,9 @@ contains
     do A = 1, this%num
        nA = this%ns(A)
        gA = this%gs(A)
+       pA = this%ps(A)
        call gtoint(2*nA, conjg(gA)+gA, gg, ierr); CHK_ERR(ierr)
        nt = 1.0d0/sqrt(gg(2*nA))
-
-       nA = this%ns(A)
-       gA = this%gs(A)
-       pA = this%ps(A)
        do iop = 1, this%numops
           select case(this%ops_typ(iop))
           case("0")
@@ -173,8 +171,19 @@ contains
              end if
           case("dP")
              this%ops_num(iop,A) = 1
-             this%ops_cs(iop,A, 1)  = II*nt
+             this%ops_cs(iop,A, 1)  = -II*nt
              this%ops_ns(iop,A, 1) = nA+1
+          case("dgr")
+             this%ops_num(iop,A)  = 2
+             this%ops_cs(iop,A,1) = -nt
+             this%ops_ns(iop,A,1) = nA+2
+             call calc_nterm(1, nA, real(gA), tmp, ierr)
+             this%ops_cs(iop,A,2) = tmp
+             this%ops_ns(iop,A,2) = nA
+          case("dgi")
+             this%ops_num(iop,A)  = 1
+             this%ops_cs(iop,A,1) = -II*nt
+             this%ops_ns(iop,A,1) = nA+2             
           case default
              MSG_ERR("unsupported typ")
              ierr = 1; return

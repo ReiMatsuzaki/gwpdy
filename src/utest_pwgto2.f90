@@ -48,6 +48,14 @@ contains
     call test_dR
     call Timer_end(timer, "dR", ierr)
 
+    call Timer_begin(timer, "dgr", ierr)
+    call test_dgr
+    call Timer_end(timer, "dgr", ierr)
+
+    call Timer_begin(timer, "dgi", ierr)
+    call test_dgi
+    call Timer_end(timer, "dgi", ierr)
+    
     call Timer_begin(timer, "nterm", ierr)
     call test_nterm
     call Timer_end(timer, "nterm", ierr)
@@ -371,6 +379,96 @@ contains
     call PWGTO_delete(g, ierr)
 
   end subroutine test_dR
+  subroutine test_dgr
+    use Mod_Math, only : gtoint
+    type(Obj_PWGTO) :: g
+    integer, parameter :: n = 4
+    integer, parameter :: maxnd = 4
+    integer, parameter :: numops = 4
+    integer, parameter :: op0=1, op1=2, op2=3, opdgr=4
+    integer, parameter :: nx = 1
+    complex(kind(0d0)) :: S(n, n), M10(n,n), cs(n)
+    integer ierr
+    double precision :: dg = 0.01d0, xs(nx)
+    complex(kind(0d0)) :: y2s(nx), y3s(nx), dy(nx)
+    
+    call PWGTO_new(g, n, 1, maxnd, numops, ierr)
+    g%ns(1)=1; g%gs(1)=1.1d0;    g%Rs(1) = 0.1d0
+    g%ns(2)=1; g%gs(2)=1.1d0+dg; g%Rs(2) = 0.1d0
+    g%ns(3)=1; g%gs(3)=1.1d0-dg; g%Rs(3) = 0.1d0
+    g%ns(4)=0; g%gs(4)=0.4d0; g%Rs(4) = 0.3d0
+    g%ops_typ(op0) = "0"
+    g%ops_typ(op1) = "1"
+    g%ops_typ(op2) = "2"
+    g%ops_typ(opdgr) = "dgr"
+    call PWGTO_setup(g, ierr)
+    
+    xs(1) = 0.11d0
+
+    cs(:) = 0; cs(1) = 1
+    call PWGTO_at(g, opdgr, cs(:), xs(:), dy(:), ierr); CHK_ERR(ierr)
+        
+    cs(:) = 0; cs(2) = 1
+    call PWGTO_at(g, op0, cs(:), xs(:), y2s(:), ierr); CHK_ERR(ierr)
+    cs(:) = 0; cs(3) = 1
+    call PWGTO_at(g, op0, cs(:), xs(:), y3s(:), ierr); CHK_ERR(ierr)
+
+    EXPECT_NEAR_C(dy(1), (y2s(1)-y3s(1))/(2*dg), dg*dg/100, ierr)
+    
+    call PWGTO_overlap(g, op0,  op2, S(:,:),   ierr)
+    call PWGTO_overlap(g, opdgr, op2, M10(:,:), ierr)
+
+    EXPECT_NEAR_C(M10(1,4), (S(2,4)-S(3,4))/(2*dg), dg*dg/10, ierr)
+    
+    call PWGTO_delete(g, ierr)
+
+  end subroutine test_dgr
+  subroutine test_dgi
+    use Mod_Math, only : gtoint
+    use Mod_const, only : II
+    type(Obj_PWGTO) :: g
+    integer, parameter :: n = 4
+    integer, parameter :: maxnd = 4
+    integer, parameter :: numops = 4
+    integer, parameter :: op0=1, op1=2, op2=3, opdgi=4
+    integer, parameter :: nx = 1
+    complex(kind(0d0)) :: S(n, n), M10(n,n), cs(n)
+    integer ierr
+    double precision :: dg = 0.01d0, xs(nx)
+    complex(kind(0d0)) :: y2s(nx), y3s(nx), dy(nx)
+    
+    call PWGTO_new(g, n, 1, maxnd, numops, ierr)
+    g%ns(1)=1; g%gs(1)=1.1d0;    g%Rs(1) = 0.1d0
+    g%ns(2)=1; g%gs(2)=1.1d0+II*dg; g%Rs(2) = 0.1d0
+    g%ns(3)=1; g%gs(3)=1.1d0-II*dg; g%Rs(3) = 0.1d0
+    g%ns(4)=0; g%gs(4)=0.4d0; g%Rs(4) = 0.3d0
+    g%ops_typ(op0) = "0"
+    g%ops_typ(op1) = "1"
+    g%ops_typ(op2) = "2"
+    g%ops_typ(opdgi) = "dgi"
+    call PWGTO_setup(g, ierr)
+    
+    xs(1) = 0.11d0
+
+    cs(:) = 0; cs(1) = 1
+    call PWGTO_at(g, opdgi, cs(:), xs(:), dy(:), ierr); CHK_ERR(ierr)
+        
+    cs(:) = 0; cs(2) = 1
+    call PWGTO_at(g, op0, cs(:), xs(:), y2s(:), ierr); CHK_ERR(ierr)
+    cs(:) = 0; cs(3) = 1
+    call PWGTO_at(g, op0, cs(:), xs(:), y3s(:), ierr); CHK_ERR(ierr)
+
+    EXPECT_NEAR_C(dy(1), (y2s(1)-y3s(1))/(2*dg), dg*dg/100, ierr)
+    
+    call PWGTO_overlap(g, op0,  op2, S(:,:),   ierr)
+    call PWGTO_overlap(g, opdgi, op2, M10(:,:), ierr)
+
+    EXPECT_NEAR_C(M10(1,4), (S(2,4)-S(3,4))/(2*dg), dg*dg/10, ierr)
+    
+    call PWGTO_delete(g, ierr)
+
+  end subroutine test_dgi
+
   subroutine test_nterm
     use Mod_Math, only : gtoint
     type(Obj_PWGTO) :: g
