@@ -59,6 +59,10 @@ contains
     call Timer_begin(timer, "nterm", ierr)
     call test_nterm
     call Timer_end(timer, "nterm", ierr)
+
+    call Timer_begin(timer, "pot_gauss", ierr)
+    call test_pot_gauss
+    call Timer_end(timer, "pot_gauss", ierr)
     
   end subroutine UTestPWGTO_run
   subroutine test_run
@@ -468,7 +472,6 @@ contains
     call PWGTO_delete(g, ierr)
 
   end subroutine test_dgi
-
   subroutine test_nterm
     use Mod_Math, only : gtoint
     type(Obj_PWGTO) :: g
@@ -506,6 +509,41 @@ contains
     call PWGTO_delete(g, ierr)
     
   end subroutine test_nterm
+  subroutine test_pot_gauss
+    use Mod_UTest
+    integer, parameter :: nx = 0, num = 1, maxnd = 3, numops = 2
+    type(Obj_PWGTO) :: basis
+    complex(kind(0d0)) :: H(num,num)
+    double precision v0
+    complex(kind(0d0)) b, ref
+    integer, parameter :: iop0=1, iopdR=2
+    integer ierr
+
+    v0 = 1.2d0
+    b  = 1.3d0
+
+    call PWGTO_new(basis, num, 1, maxnd, numops, ierr); CHK_ERR(ierr)
+    basis%ns(:) = 0
+    basis%gs(:) = 100
+    basis%Rs(:) = 2.3
+    basis%Ps(:) = 0
+    basis%ops_typ(iop0)  = "0"
+    basis%ops_typ(iopdR) = "dR"
+    call PWGTO_setup(basis, ierr); CHK_ERR(ierr)
+    
+    call PWGTO_gauss(basis, iop0, iop0, b, H(:,:), ierr); CHK_ERR(ierr)
+    H(:,:) = H(:,:) * v0
+    ref = v0 * exp(-b*basis%Rs(1)**2)
+    EXPECT_NEAR_C(ref, H(1,1), 1.0d-3, ierr)
+
+    call PWGTO_gauss(basis, iopdR, iop0, b, H(:,:), ierr); CHK_ERR(ierr)
+    H(:,:) = 2*real(H(:,:)) * v0
+    ref = v0 * exp(-b*basis%Rs(1)**2) * (-2*basis%Rs(1)*b)
+    EXPECT_NEAR_C(ref, H(1,1), 1.0d-3, ierr); CHK_ERR(ierr)
+
+    call PWGTO_delete(basis, ierr); CHK_ERR(ierr)
+
+  end subroutine test_pot_gauss
 end module Mod_UTestPWGTO
 
 program main

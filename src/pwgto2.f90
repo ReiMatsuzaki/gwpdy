@@ -171,7 +171,7 @@ contains
              end if
           case("dP")
              this%ops_num(iop,A) = 1
-             this%ops_cs(iop,A, 1)  = -II*nt
+             this%ops_cs(iop,A, 1)  = II*nt
              this%ops_ns(iop,A, 1) = nA+1
           case("dgr")
              this%ops_num(iop,A)  = 2
@@ -287,6 +287,16 @@ contains
     integer :: A, B, i, j, nAi, nBj
     complex(kind(0d0)) :: acc
     ierr = 0
+    if(ibra<1 .or. this%numops<ibra) then
+       MSG_ERR("out of range: ibra")
+       write(0,*) "ibra:", ibra
+       ierr = 1; return
+    end if
+    if(iket<1 .or. this%numops<iket) then
+       MSG_ERR("out of range: iket")
+       write(0,*) "iket:", iket
+       ierr = 1; return
+    end if
     call check_matrix(this, res, ierr); CHK_ERR(ierr)
     do A = 1, this%num
        do B = 1, this%num
@@ -303,6 +313,54 @@ contains
        end do       
     end do
   end subroutine PWGTO_overlap
+  subroutine PWGTO_gauss(this, ibra, iket, pot_b, res, ierr)
+    ! compute Hamiltonian matrix of gaussian potential.
+    use Mod_Math, only : gtoint_shift
+    type(Obj_PWGTO) :: this
+    integer, intent(in) :: ibra, iket
+    complex(kind(0d0)), intent(in) :: pot_b
+    complex(kind(0d0)), intent(out) :: res(:,:)
+    integer, intent(out) :: ierr
+    integer A,B,i,j
+    complex(kind(0d0)) :: c, cumsum
+    
+    integer nA_nB
+    double precision, parameter :: tol = 1.0d-10
+    complex(kind(0d0)) :: intg(0:2*this%maxnd, 0:4*this%maxnd)
+    ierr = 0            
+
+    do A = 1, this%Num
+       if(this%ns(A).ne.0) then
+          MSG_ERR("n!=0 not impled")
+          ierr = 1; return
+       end if
+    end do
+    
+    do A = 1, this%num
+       do B = 1, this%num
+          nA_nB = 0
+          do i = 1, this%ops_num(ibra,A)
+             do j = 1, this%ops_num(iket,B)                
+                if(nA_nB<this%ops_ns(ibra,A,i) + this%ops_ns(iket,B,j)) then
+                   nA_nB = this%ops_ns(ibra,A,i) + this%ops_ns(iket,B,j)
+                end if
+             end do
+          end do
+          
+          call hermite_gauss(pot_b, this%gAB(A,B), this%RAB(A,B), nA_nB, intg, ierr)
+          cumsum = 0          
+          do i = 1, this%ops_num(ibra,A)
+             do j = 1, this%ops_num(iket,B)
+                nA_nB = this%ops_ns(ibra,A,i) + this%ops_ns(iket,B,j)                
+                c = conjg(this%ops_cs(ibra,A,i)) * this%ops_cs(iket,B,j)
+                cumsum = cumsum + c*intg(nA_nB,0)
+             end do
+          end do
+          res(A,B) = cumsum * this%eAB(A,B)
+       end do
+    end do
+    
+  end subroutine PWGTO_Gauss
   subroutine PWGTO_at(this, iop, cs, xs, res, ierr)
     use Mod_const, only : II
     type(Obj_PWGTO) :: this
@@ -483,4 +541,34 @@ contains
     complex(kind(0d0)), intent(out) :: res
     res = sqrt(pi/gP)
   end subroutine hermite_1dint
+  subroutine hermite_gauss(pot_b, gP, wP, maxN, res, ierr)
+    ! calculation for integration of Hermite polynomial and gauss.
+    !      I(N,n) = (d/dw)^N     Int[(q-w)^n       Exp[-g(q-w)^2 - bq^2 ]
+    !             = (d/dw)^{N-1} n. Int[(q-w)^{n-1} Exp[-g(q-w)^2 - bq^2 ]
+    !              +(d/dw)^{N-1} 2g.Int[(q-w)^{n+1} Exp[-g(q-w)^2 - bq^2 ]
+    !             = n I(N-1,n-1) + 2g I(N-1,n+1)
+    use Mod_math, only : gtoint_shift
+    complex(kind(0d0)), intent(in) :: pot_b
+    complex(kind(0d0)), intent(in) :: gP, wP
+    integer, intent(in) :: maxN
+    complex(kind(0d0)), intent(out) :: res(0:,0:)
+    integer, intent(out) :: ierr
+    integer NN, n
+    
+    ierr = 0
+    res(:,:) = 0
+    call gtoint_shift(maxN, gP, pot_b, wP, res(0,:), ierr); CHK_ERR(ierr)
+
+    do NN = 1, maxN
+       do n = 0, maxN
+          if(n.ne.2*maxN) then
+             res(NN,n) = res(NN,n) + 2*gP*res(NN-1,n+1)
+          end if
+          if(n.ne.0) then
+             res(NN,n) = res(NN,n) + n   *res(NN-1,n-1)
+          end if
+       end do
+    end do
+    
+  end subroutine hermite_gauss
 end module Mod_PWGTO2

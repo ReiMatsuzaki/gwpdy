@@ -154,6 +154,34 @@ contains
     res(:) = tmp(:,1)
     
   end subroutine lapack_zgesv_1
+  subroutine lapack_dgesv_1(n, A, x_res, ierr)
+    integer, intent(in) :: n
+    double precision, intent(in) :: A(:,:)    
+    double precision, intent(inout) :: x_res(:)
+    integer, intent(out) :: ierr
+    integer info, ipiv(n)
+    double precision :: AA(n,n)
+    double precision :: tmp(n,1)
+
+    if(size(A,1).ne.n) then
+       MSG_ERR("invalid size")
+       write(0,*) "A:", size(A,1), size(A,2)
+       write(0,*) "n:", n
+       ierr = 1; return
+    end if
+
+    ierr = 0
+    AA(:,:) = A(:,:)
+    tmp(:,1) = x_res(:)
+    call DGESV(n, 1, AA, n, ipiv, tmp, n, info)
+    if(info.ne.0) then
+       MSG_ERR("error on DFESV")
+       write(0,*) "info:", info
+       ierr=1; return
+    end if
+    x_res(:) = tmp(:,1)
+        
+  end subroutine lapack_dgesv_1
   subroutine intet_diag(n, H, dt, c, ierr)
     use Mod_const, only : II
     integer, intent(in) :: n
@@ -181,13 +209,46 @@ contains
     complex(kind(0d0)) :: w(n)
     complex(kind(0d0)) :: UL(n,n), UR(n,n)
 
-    call lapack_zggev_shift(n, H, S, H(1,1), w, UL, UR, ierr); CHK_ERR(ierr)
-    c(:) = matmul(transpose(UL), matmul(S,c))
+    ! call lapack_zggev_shift(n, H, S, H(1,1), w, UL, UR, ierr); CHK_ERR(ierr)
+    call lapack_zggev(n, H, S, w, UL, UR, ierr); CHK_ERR(ierr)
+    c(:) = matmul(transpose(conjg(UL)), matmul(S,c))
     c(:) = exp(-II*w(:)*dt) * c(:)
     c(:) = matmul(UR(:,:), c(:))
     
   end subroutine intet_gdiag
-  ! ==== mathematical function ====  
+  subroutine sort_zggev(n, w, UL, UR, ierr)
+    ! sort results of lapack_zggev
+    integer, intent(in) :: n
+    complex(kind(0d0)), intent(inout) :: w(:), UL(:,:), UR(:,:)
+    integer, intent(out) :: ierr
+    complex(kind(0d0)) :: tmp_uR(n), tmp_uL(n), tmp_w
+    integer A, B, num
+
+    num = size(w)
+    ierr = 0
+    
+    do A = 1, num
+       do B = num, A+1, -1
+          if(real(w(B-1)) < real(w(B))) then
+             
+             tmp_w  = w(B-1)
+             tmp_uR = UR(:,B-1)
+             tmp_uL = UL(:,B-1)
+
+             w(B-1)    = w(B)
+             UR(:,B-1) = UR(:,B)
+             UL(:,B-1) = UL(:,B)
+
+             w(B)    = tmp_w
+             UR(:,B) = tmp_uR(:)
+             UL(:,B) = tmp_uL(:)
+             
+          end if
+       end do
+    end do
+    
+  end subroutine sort_zggev
+  ! ==== mathematical function ====
   subroutine dfact(maxn, res, ierr)
     ! gives double factorial
     integer, intent(in) :: maxn
@@ -256,6 +317,38 @@ contains
     end do
     
   end subroutine gtoint
+  subroutine gtoint_shift(maxn, a, b, q0, res, ierr)
+    ! compute integration
+    !      J_n = Int_{-oo}^{+oo} dq (q-q0)^n Exp[-a (q-q0)^2 - b q^2]
+    ! by the recursive formula.
+    !      (1+b/a) J_n = (n-1)/(2a) J_{n-2} - b.q_0/a. J_{n-1}
+    ! See 2018/4/16/qpbranch for detail
+    
+    use Mod_const, only : PI
+    integer, intent(in) :: maxn
+    complex(kind(0d0)), intent(in) :: a, b, q0
+    complex(kind(0d0)), intent(out) :: res(0:)
+    integer, intent(out) :: ierr
+    integer n
+
+    ierr = 0
+    if(maxn<0) then
+       MSG_ERR("maxn<0");
+       write(0,*) "maxn:", maxn
+       ierr = 1; return       
+    end if
+    
+    res(0) = sqrt(PI) * exp(-(a*b*q0**2)/(a+b)) / sqrt(a+b)
+    if(maxn.eq.0) return
+    
+    res(1) = sqrt(PI) * b*(-q0)*exp(a*q0**2*(a/(a+b)-1))/((a+b)**1.5d0)
+    if(maxn.eq.1) return
+    
+    do n = 2, maxn
+       res(n) = ((n-1)/(2*a)*res(n-2) - b*q0/a*res(n-1)) / (1+b/a)
+    end do
+
+  end subroutine gtoint_shift
   ! ==== IO ====
   subroutine ivec2csv(x, fn, ierr)
     use Mod_sys, only : open_w
